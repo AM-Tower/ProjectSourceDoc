@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+
 ################################################################################
 # @file        deploy.sh
 # @brief       Qt 6 Desktop Application Deployment Script for Linux and macOS.
@@ -64,17 +65,9 @@
 #              is best handled in a separate PowerShell or batch script.
 #
 # @author      Jeffrey Scott Flesher with the help of AI: Claude
-# @date        2026-03-30
+# @date        2026-03-31
 # @section     License  Unlicensed, MIT, or any.
 # clear; chmod +x deploy.sh && shellcheck deploy.sh && ./deploy.sh
-# git apply --check deploy.patch
-# git apply deploy.patch
-# git diff deploy.sh | less
-
-# Make sure deploy.sh contains the changes you want
-# git diff deploy.sh > deploy.patch
-# git apply --check deploy.patch
-
 # deploy/ProjectSourceDoc-1.0.0-x86_64.AppImage
 # chmod +x deploy/ProjectSourceDoc-1.0.0-x86_64.AppImage && ./deploy/ProjectSourceDoc-1.0.0-x86_64.AppImage
 #
