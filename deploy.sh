@@ -1473,14 +1473,24 @@ remove_problem_libraries()
 {
     section "Removing unsafe system libraries";
 
-    rm -f \
+    local removed=0
+
+    for lib in \
         "${APPDIR}/usr/lib/libcap.so"* \
         "${APPDIR}/usr/lib64/libcap.so"* \
         "${APPDIR}/usr/lib/libsystemd.so"* \
-        "${APPDIR}/usr/lib64/libsystemd.so"* \
-        2>/dev/null || true;
+        "${APPDIR}/usr/lib64/libsystemd.so"*; do
+        if [[ -e "$lib" ]]; then
+            rm -f "$lib"
+            removed=1
+        fi
+    done
 
-    pass "Removed unsafe system libraries";
+    if [[ "$removed" -eq 1 ]]; then
+        pass "Unsafe system libraries removed"
+    else
+        pass "No unsafe system libraries found"
+    fi
 }
 
 ################################################################################
