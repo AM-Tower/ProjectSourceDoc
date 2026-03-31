@@ -1583,44 +1583,28 @@ run_linuxdeploy_appdir_only()
 ################################################################################
 run_linuxdeploy()
 {
-    section "Running linuxdeploy + Qt Plugin (single‑Qt enforced, Fedora‑safe)"
+    section "Running linuxdeploy + Qt Plugin (strict allowlist, Fedora‑safe)"
 
     [[ "${OS}" != "linux" ]] && return 0
 
     # ─────────────────────────────────────────────────────────────
-    # ✅ FORCE A SINGLE Qt (ABSOLUTE)
+    # ✅ FORCE SINGLE Qt
     # ─────────────────────────────────────────────────────────────
     export QT_ROOT="/opt/Qt/6.10.2/gcc_64"
     export QMAKE="${QT_ROOT}/bin/qmake"
     export PATH="${QT_ROOT}/bin:${PATH}"
     export LD_LIBRARY_PATH="${QT_ROOT}/lib"
     export QT_PLUGIN_PATH="${QT_ROOT}/plugins"
-
-    # Clear any inherited preload (critical for AppRun test)
     unset LD_PRELOAD
 
     # ─────────────────────────────────────────────────────────────
-    # ✅ HARD BLOCK UNSAFE & SYSTEM LIBS (BEFORE linuxdeploy)
+    # ✅ ABSOLUTE CONTROL: disable all auto dependency copying
     # ─────────────────────────────────────────────────────────────
-    export LINUXDEPLOY_EXCLUDE_LIBS="
-        libQt6Core.so.6;
-        libQt6Gui.so.6;
-        libQt6Widgets.so.6;
-        libQt6Svg.so.6;
-        libQt6Concurrent.so.6;
-        libQt6DBus.so.6;
-        libcap.so.2;
-        libsystemd.so.0
-    "
-
-    # Extra guard for plugin‑qt oddities
-    export LINUXDEPLOY_BLACKLIST_LIBS="libcap.so.2:libsystemd.so.0"
-
-    # Do not strip — avoids Qt private symbol breakage
+    export LINUXDEPLOY_DEPLOY_DEPS=0
     export LINUXDEPLOY_PLUGIN_QT_NO_STRIP=1
 
     # ─────────────────────────────────────────────────────────────
-    # ✅ RUN linuxdeploy
+    # ✅ RUN linuxdeploy (Qt plugin ONLY)
     # ─────────────────────────────────────────────────────────────
     "${LINUXDEPLOY_BIN}" \
         --appdir "${APPDIR}" \
@@ -1630,7 +1614,7 @@ run_linuxdeploy()
         >> "${INSTALLER_LOG}" 2>&1 \
         || fail "linuxdeploy failed"
 
-    pass "linuxdeploy completed (single‑Qt, unsafe libs blocked)"
+    pass "linuxdeploy completed (dependency chasing disabled)"
 }
 
 ################################################################################
