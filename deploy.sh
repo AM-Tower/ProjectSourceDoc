@@ -1502,6 +1502,44 @@ remove_problem_libraries()
     fi
 }
 
+
+################################################################################
+# @brief install_apprun_wrapper
+################################################################################
+install_apprun_wrapper()
+{
+    section "Installing AppRun wrapper (Qt runtime guard)";
+
+    local apprun="${APPDIR}/AppRun";
+    local target="${APPDIR}/usr/bin/${APP_NAME}";
+
+    if [[ ! -x "${target}" ]]; then
+        fail "Target binary not executable: ${target}";
+    fi
+
+    # Remove linuxdeploy-created symlink
+    rm -f "${apprun}";
+
+    # Create real AppRun script
+    cat > "${apprun}" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ─────────────────────────────────────────────
+# Qt runtime hard guards (REQUIRED)
+# ─────────────────────────────────────────────
+export QT_NO_DBUS=1
+export QT_ASSUME_STDERR_HAS_CONSOLE=1
+export QT_LOGGING_RULES="*.debug=false"
+export QT_QPA_PLATFORM=xcb
+
+exec "\$(dirname "\$0")/usr/bin/${APP_NAME}" "\$@"
+EOF
+
+    chmod +x "${apprun}";
+    pass "AppRun wrapper installed";
+}
+
 ################################################################################
 # @brief Verify that libcap is NOT bundled in the AppImage.
 # @details Fails hard if libcap is present in AppDir/usr/lib.
@@ -2020,6 +2058,7 @@ main()
 
             # Verify the AppDir is safe to execute
             verify_no_unsafe_runtime_libs;
+            install_apprun_wrapper;
 
             # Optional: convert AppRun symlink into a wrapper that exports runtime env
             # bake_apprun_wrapper;
@@ -2044,6 +2083,7 @@ main()
 
             remove_problem_libraries;
             verify_no_unsafe_runtime_libs;
+            install_apprun_wrapper;
 
             # Optional:
             # bake_apprun_wrapper;
