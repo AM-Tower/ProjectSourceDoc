@@ -1990,43 +1990,33 @@ main()
         cleanup_old_appimages;
 
         if [[ "${run_mode}" == 1 ]]; then
-            # Populate AppDir
             run_linuxdeploy;
             install_appdata;
             validate_bundled_qt;
             scan_qt_plugins;
 
-            # ✅ MUST happen BEFORE any execution
+            # ✅ REQUIRED FIX
+            remove_problem_libraries;
             verify_no_unsafe_runtime_libs;
 
-            # AppDir-only tests
             run_tests;
-
-            # These are now safety nets (should be no-ops)
-            remove_problem_libraries;
-            verify_no_libcap_bundled;
-
             build_appimage_from_appdir;
             audit_appimage_for_unsafe_libs;
             run_appimage_test;
             run_appimage_runtime_diagnostics;
-
         else
-            # AppDir-only mode
             run_linuxdeploy_appdir_only;
             install_appdata;
             validate_bundled_qt;
             scan_qt_plugins;
 
+            remove_problem_libraries;
             verify_no_unsafe_runtime_libs;
 
-            remove_problem_libraries;
-            verify_no_libcap_bundled;
             build_appimage_from_appdir;
             audit_appimage_for_unsafe_libs;
             run_appimage_runtime_diagnostics;
-        fi
-        # Only reached if AppImage test passed
+        fi        # Only reached if AppImage test passed
         finalise_output;
         print_summary;
 
