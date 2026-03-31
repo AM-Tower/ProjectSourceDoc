@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.am-tower.ProjectSourceDoc</id>
+
+  <name>ProjectSourceDoc</name>
+  <summary>Creates a Project-Source.txt file containing all CMake source files</summary>
+
+  <developer id="io.github.am-tower">
+    <name>AM-Tower</name>
+  </developer>
+
+  <url type="homepage">https://github.com/AM-Tower/ProjectSourceDoc</url>
+
+  <content_rating type="oars-1.1"/>
+
+  <description>
+    <p>
+      ProjectSourceDoc generates a single Project-Source.txt file from a
+      CMake-based project. It is useful for AI analysis, documentation,
+      and sharing complete source trees in one file.
+    </p>
+  </description>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <launchable type="desktop-id">ProjectSourceDoc.desktop</launchable>
+
+  <provides>
+    <binary>ProjectSourceDoc</binary>
+  </provides>
+</component>

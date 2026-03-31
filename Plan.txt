@@ -1,0 +1,122 @@
+✅ Current State (Important Baseline)
+From your output:
+
+✅ AppDir creation works
+✅ linuxdeploy (AppDir‑only) works
+✅ Unsafe libraries are removed
+✅ appimagetool builds the AppImage
+✅ Output is correctly finalized
+❌ Running the AppImage segfaults immediately
+
+This means:
+
+The remaining crash is no longer a deployment-order bug.
+It is now a runtime / ABI / environment issue inside the AppImage.
+
+That’s progress.
+
+🧭 PLAN TO FIX THE SEGMENTATION FAULT
+Phase 1 — Confirm where the crash happens (AppImage vs AppDir)
+Step 1.1 — Run the AppDir binary directly
+Purpose: determine whether the crash is caused by AppImage runtime or your app + bundled libs.
+Shell./AppDir/AppRunShow more lines
+Outcomes
+
+✅ If this also segfaults → the problem is inside the bundled runtime
+✅ If this works → the problem is AppImage runtime interaction
+
+Do not skip this. It determines the rest of the plan.
+
+Phase 2 — Identify the failing shared object (early loader crash)
+Segfaults that occur before any output almost always come from:
+
+incompatible glibc
+incompatible libstdc++
+incompatible libgcc_s
+CPU feature mismatch
+duplicated low‑level system libs
+
+Step 2.1 — Run with dynamic loader diagnostics
+ShellLD_DEBUG=libs ./deploy/ProjectSourceDoc-1.0.0-x86_64.AppImage 2> ld_debugShow more lines
+This tells you which library is being loaded last before the crash.
+
+Step 2.2 — Run AppRun under gdb
+Shell./deploy/ProjectSourceDoc-1.0.0-x86_64.AppImage --appimage-extractcd squashfs-rootgdb -ex run -ex bt -ex quit --args ./AppRunShow more lines
+What you are looking for
+
+A backtrace that names:
+
+a .so file
+or crashes during _dl_init
+
+
+That library is the next fix target
+
+
+Phase 3 — Eliminate known AppImage crash causes (in order)
+These are well‑known AppImage segfault sources, not guesses.
+Step 3.1 — Ensure no C++ runtime is bundled
+Even if linuxdeploy claims it skipped them, verify:
+Shellfind squashfs-root/usr/lib -name 'libstdc++.so*'find squashfs-root/usr/lib -name 'libgcc_s.so*'Show more lines
+If any exist
+
+Remove them
+Rebuild AppImage
+
+AppImages must use the host C++ runtime.
+
+Step 3.2 — Ensure no glibc is bundled
+Shellfind squashfs-root/usr/lib -name 'libc.so*'Show more lines
+If found → that alone explains the segfault.
+
+Phase 4 — Qt platform / OpenGL sanity
+Qt 6 will probe OpenGL very early.
+Step 4.1 — Force software rendering
+ShellQT_OPENGL=software ./deploy/ProjectSourceDoc-1.0.0-x86_64.AppImageShow more lines
+If this works:
+
+Your crash is GPU / GL loader related
+You then ship with:
+Shellexport QT_OPENGL=softwareShow more lines
+in AppRun or wrapper
+
+
+Step 4.2 — Force xcb explicitly
+ShellQT_QPA_PLATFORM=xcb ./deploy/ProjectSourceDoc-1.0.0-x86_64.AppImageShow more lines
+If this fixes it:
+
+Your runtime default platform selection is failing
+You can lock it explicitly
+
+
+Phase 5 — CPU feature mismatch check (often overlooked)
+If Qt or ICU was built with newer CPU flags than the target machine:
+Shellobjdump -d squashfs-root/usr/bin/ProjectSourceDoc | grep -E 'avx|avx2|fma'Show more lines
+If present:
+
+The binary cannot run on older CPUs
+Rebuild Qt or your app with safer flags
+
+
+Phase 6 — Only after all above: re‑enable tests
+Your test harness was previously misleading, so only re‑enable once runtime is stable.
+Replace runtime test with:
+Shell./deploy/ProjectSourceDoc-1.0.0-x86_64.AppImage --helpShow more lines
+or similar non‑GUI invocation.
+
+✅ Summary (What This Plan Does)
+
+Separates deployment correctness from runtime correctness
+Identifies the crash before guessing
+Eliminates the most common AppImage segfault causes
+Gives you binary evidence at every step
+
+
+✅ Next Action (Pick ONE)
+To proceed efficiently, do only one of these next:
+
+Run ./AppDir/AppRun and report whether it segfaults
+Run gdb on AppRun and paste the backtrace
+Run with LD_DEBUG=libs and paste the last 20 lines
+
+That will determine exactly which step of the plan to execute next.

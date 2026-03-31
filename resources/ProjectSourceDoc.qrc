@@ -1,0 +1,46 @@
+<RCC>
+
+  <!-- =========================================================
+       Base README (English)
+       Provides: :/README.md
+       ========================================================= -->
+  <qresource prefix="/">
+    <file alias="README.md">../README.md</file>
+    <file alias="README_zh_CN.md">../README_zh_CN.md</file>
+  </qresource>
+
+  <!-- =========================================================
+       Icons - Light theme
+       Files are under resources/icons/light/
+       Provides: :/icons/light/<name>.svg
+       ========================================================= -->
+  <qresource prefix="/icons/light">
+    <file alias="app.svg">icons/light/app.svg</file>
+    <file alias="doc.svg">icons/light/doc.svg</file>
+    <file alias="update.svg">icons/light/update.svg</file>
+    <file alias="exit.svg">icons/light/exit.svg</file>
+    <file alias="settings.svg">icons/light/settings.svg</file>
+    <file alias="sound.svg">icons/light/sound.svg</file>
+    <file alias="video.svg">icons/light/video.svg</file>
+    <file alias="help.svg">icons/light/help.svg</file>
+    <file alias="log.svg">icons/light/log.svg</file>
+  </qresource>
+
+  <!-- =========================================================
+       Icons - Dark theme
+       Files are under resources/icons/dark/
+       Provides: :/icons/dark/<name>.svg
+       ========================================================= -->
+  <qresource prefix="/icons/dark">
+    <file alias="app.svg">icons/dark/app.svg</file>
+    <file alias="doc.svg">icons/dark/doc.svg</file>
+    <file alias="update.svg">icons/dark/update.svg</file>
+    <file alias="exit.svg">icons/dark/exit.svg</file>
+    <file alias="settings.svg">icons/dark/settings.svg</file>
+    <file alias="sound.svg">icons/dark/sound.svg</file>
+    <file alias="video.svg">icons/dark/video.svg</file>
+    <file alias="help.svg">icons/dark/help.svg</file>
+    <file alias="log.svg">icons/dark/log.svg</file>
+  </qresource>
+
+</RCC>
