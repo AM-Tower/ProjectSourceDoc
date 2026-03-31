@@ -3203,31 +3203,69 @@ class StatusBarQueue final : public QObject
  * launches the main UI.
  *********************************************************************************************************************************/
 
+#include "MainWindow.h"
+
 #include <QApplication>
-#include <QDebug>
+#include <QCoreApplication>
 #include <QEvent>
 #include <QFile>
+#include <QFileInfo>
+#include <QDir>
 #include <QIcon>
 #include <QLocale>
-#include <QPalette>
 #include <QTranslator>
+#include <QPalette>
 #include <QWidget>
+#include <QTimer>
 #include <QtGlobal>
-
-#include <QCoreApplication>
-#include <QDir>
-
-#include "MainWindow.h"
+#include <QDebug>
 
 /*!
  * ********************************************************************************************************************************
- *  @brief Returns true when the active application palette implies a dark theme.
+ * @brief configure Early Runtime
  *
- *  This function evaluates the window background lightness from the current application palette and
- * treats lower lightness values as "dark mode". The heuristic is intentionally simple and mirrors
- * the logic used by theme-aware icon selection in the UI layer.
+ * @param argc Command line argument count.
+ * @param argv Command line argument vector.
+ * @return Process exit code from the Qt event loop.
+ *********************************************************************************************************************************/
+static void configureEarlyRuntime(int argc, char *argv[])
+{
+    #ifdef __MINGW32__
+    // Keep your important compatibility settings.
+    qputenv("QT_DEFAULT_RHI", "opengl");
+    qputenv("QT_QPA_PLATFORM", "windows");
+
+    // Optional but robust: if plugins are shipped in a "plugins" folder next to the exe,
+    // point Qt to them *early* via QT_PLUGIN_PATH (preferred over setLibraryPaths).
+    // Qt docs list QT_PLUGIN_PATH as a supported mechanism for plugin discovery.
+    // [1](https://doc.qt.io/qt-6/deployment-plugins.html)
+    const QString exeDir = QFileInfo(QString::fromLocal8Bit(argv[0])).absolutePath();
+    const QString pluginsDir = QDir(exeDir).filePath("plugins");
+    if (QDir(pluginsDir).exists())
+    {
+        qputenv("QT_PLUGIN_PATH", QFile::encodeName(pluginsDir));
+    }
+
+    // Avoid qDebug here if you want ultra-clean early startup; use stderr instead.
+    // (qDebug is usually fine, but stderr is the safest pre-app.)
+    fprintf(stderr, "QT_DEFAULT_RHI=%s\n", qgetenv("QT_DEFAULT_RHI").constData());
+    fprintf(stderr, "QT_QPA_PLATFORM=%s\n", qgetenv("QT_QPA_PLATFORM").constData());
+    fprintf(stderr, "QT_PLUGIN_PATH=%s\n", qgetenv("QT_PLUGIN_PATH").constData());
+    #else
+    Q_UNUSED(argc);
+    Q_UNUSED(argv);
+    #endif
+}
+
+/*!
+ * ********************************************************************************************************************************
+ * @brief Returns true when the active application palette implies a dark theme.
  *
- *  @return True when the application appears to be using a dark theme; otherwise false.
+ * This function evaluates the window background lightness from the current application palette
+ * and treats lower lightness values as "dark mode". The heuristic is intentionally simple
+ * and mirrors the logic used by theme-aware icon selection in the UI layer.
+ *
+ * @return True when the application appears to be using a dark theme; otherwise false.
  *********************************************************************************************************************************/
 static bool isDarkTheme()
 {
@@ -3237,9 +3275,9 @@ static bool isDarkTheme()
 
 /*!
  * ********************************************************************************************************************************
- *  @brief Applies the theme-aware application icon.
+ * @brief Applies the theme-aware application icon.
  *
- *  This function selects a light or dark SVG icon from Qt resources based on the current palette.
+ * This function selects a light or dark SVG icon from Qt resources based on the current palette.
  * It sets the application icon and updates all existing top-level widgets to ensure the window icon refreshes.
  *********************************************************************************************************************************/
 static void applyThemedAppIcon()
@@ -3263,10 +3301,10 @@ static void applyThemedAppIcon()
 
 /*!
  * ********************************************************************************************************************************
- *  @class ThemeWatcher
- *  @brief Application-wide event filter that refreshes theme-aware UI resources.
+ * @class ThemeWatcher
+ * @brief Application-wide event filter that refreshes theme-aware UI resources.
  *
- *  Theme changes are typically communicated through palette, style, or theme events. This event
+ * Theme changes are typically communicated through palette, style, or theme events. This event
  * filter listens for those events and reapplies the theme-aware application icon so the icon stays
  * in sync with the system's appearance preferences.
  **********************************************************************************************************************************/
@@ -3373,52 +3411,40 @@ static bool loadAppTranslator(QTranslator &translator)
 
 /*!
  * ********************************************************************************************************************************
- *  @brief Program entry point.
+ * @brief Program entry point.
  *
- *  Initializes QApplication, installs a theme watcher, applies a theme-aware icon, installs
- * translations, and launches the main window.
+ * Initializes QApplication, installs a theme watcher, applies a theme-aware icon, installs translations, and launches the main window.
  *
- *  @param argc Command line argument count.
- *  @param argv Command line argument vector.
- *  @return Process exit code from the Qt event loop.
+ * @param argc Command line argument count.
+ * @param argv Command line argument vector.
+ * @return Process exit code from the Qt event loop.
  *********************************************************************************************************************************/
 int main(int argc, char *argv[])
 {
-    #ifdef __MINGW32__
-    // Force Qt 6 to use OpenGL instead of D3D12 on MinGW for improved compatibility.
-    qputenv("QT_DEFAULT_RHI", "opengl");
-    qDebug() << "QT_DEFAULT_RHI =" << qEnvironmentVariable("QT_DEFAULT_RHI");
+    configureEarlyRuntime(argc, argv);
 
-    // Ensure the Windows platform plugin is selected on MinGW.
-    qputenv("QT_QPA_PLATFORM", "windows");
-    qDebug() << "QT_QPA_PLATFORM =" << qEnvironmentVariable("QT_QPA_PLATFORM");
-    #endif
-
-    //QCoreApplication::setLibraryPaths({ QCoreApplication::applicationDirPath() + "/../plugins" });
-
-    // Create the application object before any GUI objects are constructed.
     QApplication app(argc, argv);
-    // Set application identity metadata.
+
     QApplication::setApplicationName("ProjectSourceDoc");
     QApplication::setOrganizationName("ProjectSourceDoc");
     QApplication::setApplicationVersion("0.1.0");
-    // Install the theme watcher before creating any windows to catch early theme-related events.
+
     ThemeWatcher watcher(&app);
     app.installEventFilter(&watcher);
-    // Apply the initial theme-aware icon before showing windows.
-    applyThemedAppIcon();
-    // Install the application translator from embedded resources so tr() resolves correctly.
+
+    // Translator is fine here (after QApplication exists). applicationDirPath warnings
+    // occur when called before app exists. [3](https://stackoverflow.com/questions/39040862/please-instantiate-the-qapplication-object-first)[2](https://doc.qt.io/qt-6/qcoreapplication.html)
     QTranslator translator;
     const bool translatorLoaded = loadAppTranslator(translator);
-    // Log translator load results for debugging.
     qDebug() << "Translator locale:" << normalizedLocale() << "loaded?" << translatorLoaded;
-    // Install the translator only when a translation was successfully loaded.
-    if (translatorLoaded) { app.installTranslator(&translator); }
-    // Create the main window after translator installation so UI strings are translated at
-    // construction.
+    if (translatorLoaded) app.installTranslator(&translator);
+
     MainWindow window;
     window.show();
-    // Enter the Qt event loop.
+
+    // Apply icon once the event loop starts (stable palette, stable platform state).
+    QTimer::singleShot(0, [&]() { applyThemedAppIcon(); });
+
     return app.exec();
 }
 
