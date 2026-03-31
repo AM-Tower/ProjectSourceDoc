@@ -1564,26 +1564,25 @@ run_linuxdeploy_appdir_only()
 ################################################################################
 run_linuxdeploy()
 {
- section "Running linuxdeploy + Qt Plugin"
+    section "Running linuxdeploy + Qt Plugin"
 
- [[ "${OS}" != "linux" ]] && return
+    export PATH="${QT_ROOT}/bin:${PATH}"
+    export QMAKE="${QT6_QMAKE}"
 
- export PATH="${QT_ROOT}/bin:${PATH}"
- export QMAKE="${QT6_QMAKE}"
- export LD_LIBRARY_PATH="${QT_ROOT}/lib"
- export QT_PLUGIN_PATH="${QT_ROOT}/plugins"
+    # ✅ CRITICAL: prevent Fedora crash
+    export LINUXDEPLOY_EXCLUDE_LIBS="libcap.so.2;libsystemd.so.0"
 
- export LINUXDEPLOY_PLUGIN_QT_NO_STRIP=1
+    export LINUXDEPLOY_PLUGIN_QT_NO_STRIP=1
 
- "${LINUXDEPLOY_BIN}" \
-   --appdir "${APPDIR}" \
-   --desktop-file "${APPDIR_APPS}/${DESKTOP_FILE}" \
-   --icon-file "${APPDIR}/${APP_NAME}.svg" \
-   -p qt \
-   >> "${INSTALLER_LOG}" 2>&1 \
-   || fail "linuxdeploy failed"
+    "${LINUXDEPLOY_BIN}" \
+        --appdir "${APPDIR}" \
+        --desktop-file "${APPDIR_APPS}/${DESKTOP_FILE}" \
+        --icon-file "${APPDIR}/${APP_NAME}.svg" \
+        -p qt \
+        >> "${INSTALLER_LOG}" 2>&1 \
+        || fail "linuxdeploy failed"
 
- pass "linuxdeploy AppDir bundling completed successfully"
+    pass "linuxdeploy AppDir bundling completed successfully"
 }
 
 ################################################################################
