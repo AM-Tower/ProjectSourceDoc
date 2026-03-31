@@ -70,7 +70,7 @@
 # clear; chmod +x deploy.sh && shellcheck deploy.sh && ./deploy.sh
 # deploy/ProjectSourceDoc-1.0.0-x86_64.AppImage
 # chmod +x deploy/ProjectSourceDoc-1.0.0-x86_64.AppImage && ./deploy/ProjectSourceDoc-1.0.0-x86_64.AppImage
-#
+# systemctl --user restart xdg-desktop-portal-kde && systemctl --user restart xdg-desktop-portal
 ################################################################################
 
 # ── Strict mode ────────────────────────────────────────────────────────────────
@@ -1564,13 +1564,32 @@ run_linuxdeploy_appdir_only()
 ################################################################################
 run_linuxdeploy()
 {
-    section "Running linuxdeploy + Qt Plugin"
+    section "Running linuxdeploy + Qt Plugin (single‑Qt enforced)"
 
+    [[ "${OS}" != "linux" ]] && return 0
+
+    # ─────────────────────────────────────────────────────────────
+    # ✅ FORCE SINGLE Qt ORIGIN (CRITICAL)
+    # ─────────────────────────────────────────────────────────────
+    export QT_ROOT="/opt/Qt/6.10.2/gcc_64"
+    export QMAKE="${QT_ROOT}/bin/qmake"
     export PATH="${QT_ROOT}/bin:${PATH}"
-    export QMAKE="${QT6_QMAKE}"
+    export LD_LIBRARY_PATH="${QT_ROOT}/lib"
+    export QT_PLUGIN_PATH="${QT_ROOT}/plugins"
 
-    # ✅ CRITICAL: prevent Fedora crash
-    export LINUXDEPLOY_EXCLUDE_LIBS="libcap.so.2;libsystemd.so.0"
+    # ─────────────────────────────────────────────────────────────
+    # ✅ HARD EXCLUDE SYSTEM Qt + FEDORA‑UNSAFE LIBS
+    # ─────────────────────────────────────────────────────────────
+    export LINUXDEPLOY_EXCLUDE_LIBS="
+        libQt6Core.so.6;
+        libQt6Gui.so.6;
+        libQt6Widgets.so.6;
+        libQt6Svg.so.6;
+        libQt6Concurrent.so.6;
+        libQt6DBus.so.6;
+        libcap.so.2;
+        libsystemd.so.0
+    "
 
     export LINUXDEPLOY_PLUGIN_QT_NO_STRIP=1
 
@@ -1582,7 +1601,7 @@ run_linuxdeploy()
         >> "${INSTALLER_LOG}" 2>&1 \
         || fail "linuxdeploy failed"
 
-    pass "linuxdeploy AppDir bundling completed successfully"
+    pass "linuxdeploy completed with single‑Qt enforcement"
 }
 
 ################################################################################
