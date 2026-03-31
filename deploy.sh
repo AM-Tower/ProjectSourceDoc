@@ -1441,13 +1441,22 @@ run_appimage_test()
     fi
 
     info "Executing AppRun under timeout";
+
     local rc=0;
 
-    if timeout 5 "${apprun}" >> "${DEBUG_LOG}" 2>&1; then
-        rc=0;
-    else
-        rc=$?;
-    fi
+    # ─────────────────────────────────────────────────────────────
+    # ✅ Fedora-safe Qt runtime environment (scoped to this command)
+    #
+    # QT_NO_DBUS=1      : disables Qt DBus startup probing
+    # QT_QPA_PLATFORM   : forces stable xcb path (avoid portal/wayland probes)
+    # QT_LOGGING_RULES  : reduces noisy debug spam during deployment runs
+    # QT_ASSUME_STDERR_HAS_CONSOLE: avoids Qt console detection issues
+    # ─────────────────────────────────────────────────────────────
+    QT_NO_DBUS=1 \
+    QT_QPA_PLATFORM=xcb \
+    QT_LOGGING_RULES="*.debug=false" \
+    QT_ASSUME_STDERR_HAS_CONSOLE=1 \
+    timeout 5 "${apprun}" >> "${DEBUG_LOG}" 2>&1 || rc=$?;
 
     if [[ "${rc}" -eq 124 ]]; then
         pass "T11: AppRun stayed alive (timeout)";
@@ -2000,21 +2009,34 @@ main()
         cleanup_old_appimages;
 
         if [[ "${run_mode}" == 1 ]]; then
+            # Populate AppDir
             run_linuxdeploy;
             install_appdata;
             validate_bundled_qt;
-            scan_qt_plugins;
+            scan_qt_plugins;          # plugin dependency scanner
 
-            # ✅ REQUIRED FIX
+            # Remove Fedora-unsafe libs pulled in by linuxdeploy-plugin-qt
             remove_problem_libraries;
+
+            # Verify the AppDir is safe to execute
             verify_no_unsafe_runtime_libs;
 
+            # Optional: convert AppRun symlink into a wrapper that exports runtime env
+            # bake_apprun_wrapper;
+
+            # AppDir-only tests
             run_tests;
+
             build_appimage_from_appdir;
             audit_appimage_for_unsafe_libs;
+
+            # Real AppImage execution test (now runs with safe env inside run_appimage_test)
             run_appimage_test;
-            run_appimage_runtime_diagnostics;
+
+            run_appimage_runtime_diagnostics;   # deep runtime harness
+
         else
+            # AppDir-only mode (populate only)
             run_linuxdeploy_appdir_only;
             install_appdata;
             validate_bundled_qt;
@@ -2023,10 +2045,14 @@ main()
             remove_problem_libraries;
             verify_no_unsafe_runtime_libs;
 
+            # Optional:
+            # bake_apprun_wrapper;
+
             build_appimage_from_appdir;
             audit_appimage_for_unsafe_libs;
             run_appimage_runtime_diagnostics;
-        fi        # Only reached if AppImage test passed
+        fi
+
         finalise_output;
         print_summary;
 
