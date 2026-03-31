@@ -454,7 +454,66 @@ QStringList MainWindow::defaultExcludeDirs()
 {
     return {QStringLiteral("build*"),   QStringLiteral(".rcc"),       QStringLiteral("CMakeFiles"),
             QStringLiteral(".git"),     QStringLiteral(".qtcreator"), QStringLiteral("engines"),
-            QStringLiteral("0-Archive")};
+            QStringLiteral("AppDir"),  QStringLiteral("0-Archive")};
+}
+
+/*!
+ * ********************************************************************************************************************************
+ * @brief   Extracts excluded directory rules from a project's .gitignore file.
+ *
+ * @details Reads the `.gitignore` file located at the specified project root and
+ *          returns a list of directory exclusion rules suitable for directory
+ *          filtering. The parser:
+ *            - Skips empty lines and comments
+ *            - Ignores negation rules (!)
+ *            - Accepts only directory rules ending with '/'
+ *            - Rejects file-extension and single-file rules
+ *            - Normalizes trailing slashes and glob suffixes
+ *
+ * @param[in] projectRoot Absolute path to the project root directory.
+ *
+ * @return  A list of relative directory paths to exclude, with no trailing slashes.
+ * ********************************************************************************************************************************
+ */
+QStringList MainWindow::excludeDirsFromGitignore(const QString &projectRoot)
+{
+    QStringList result;
+
+    const QString gitignorePath = QDir(projectRoot).filePath(QStringLiteral(".gitignore"));
+    QFile file(gitignorePath);
+
+    if (!file.exists() || !file.open(QIODevice::ReadOnly | QIODevice::Text)) return result;
+
+    QTextStream in(&file);
+
+    while (!in.atEnd())
+    {
+        QString line = in.readLine().trimmed();
+
+        // Skip comments and empty lines
+        if (line.isEmpty() || line.startsWith('#')) continue;
+
+        // Ignore negations (!important)
+        if (line.startsWith('!')) continue;
+
+        // Normalize directory rules:
+        //  - Must end with '/'
+        //  - Must not contain a dot-extension file rule
+        const bool endsWithSlash = line.endsWith('/');
+        const bool looksLikeFile = line.contains('.') && !line.contains('*');
+
+        if (!endsWithSlash || looksLikeFile) continue;
+
+        // Remove trailing slash
+        line.chop(1);
+
+        // Convert gitignore-style */ to QDir glob
+        if (line.endsWith("/*")) line.chop(2);
+
+        if (!result.contains(line)) result.append(line);
+    }
+
+    return result;
 }
 
 /*!
@@ -587,11 +646,25 @@ void MainWindow::createSettingsTab()
                 }
 
                 const QString path = QDir(current->text()).absolutePath();
-
                 setSettingsPanelEnabled(true);
                 loadSettingsForProject(path);
             });
 
+    /* --------- NEW: Project folders --------- */
+    connect(m_addProjectFolderBtn, &QPushButton::clicked,
+            this, &MainWindow::onBrowseProjectFolder);
+
+    connect(m_removeProjectFolderBtn, &QPushButton::clicked,
+            this, &MainWindow::onRemoveProjectFolder);
+
+    /* --------- NEW: Exclude folders --------- */
+    connect(m_addExcludeBrowseBtn, &QPushButton::clicked,
+            this, &MainWindow::onBrowseExcludeFolder);
+
+    connect(m_removeExcludeBtn, &QPushButton::clicked,
+            this, &MainWindow::onRemoveExcludeFolder);
+
+    /* --------- Backup browse (existing) --------- */
     connect(m_backupBrowseBtn, &QPushButton::clicked, this,
             [this]()
             {
@@ -600,7 +673,7 @@ void MainWindow::createSettingsTab()
                     return;
 
                 const QString start =
-                    m_backupFolderEdit && !m_backupFolderEdit->text().trimmed().isEmpty()
+                    !m_backupFolderEdit->text().trimmed().isEmpty()
                         ? m_backupFolderEdit->text().trimmed()
                         : projectRoot;
 
@@ -611,13 +684,109 @@ void MainWindow::createSettingsTab()
                 if (dir.isEmpty())
                     return;
 
-                const QString abs = QDir(dir).absolutePath();
-
-                if (m_backupFolderEdit)
-                    m_backupFolderEdit->setText(abs);
-
+                m_backupFolderEdit->setText(QDir(dir).absolutePath());
                 saveSettingsForProject(projectRoot);
             });
+}
+
+/*!
+ * ********************************************************************************************************************************
+ * @brief        Adds a project folder to the Settings tab.
+ *********************************************************************************************************************************/
+void MainWindow::onBrowseProjectFolder()
+{
+    const QString start = !m_openProjectRoot.isEmpty()
+    ? m_openProjectRoot
+    : QDir::homePath();
+
+    const QString dir = QFileDialog::getExistingDirectory(
+        this, tr("Select Project Folder"), start,
+        QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
+
+    if (dir.isEmpty())
+        return;
+
+    const QString abs = QDir(dir).absolutePath();
+
+    if (m_projectFoldersList->findItems(abs, Qt::MatchExactly).isEmpty())
+    {
+        auto *item = new QListWidgetItem(abs, m_projectFoldersList);
+        item->setFlags(item->flags() | Qt::ItemIsEditable);
+    }
+}
+
+/*!
+ * ********************************************************************************************************************************
+ * @brief        Removes the selected project folder from the Settings tab.
+ *********************************************************************************************************************************/
+void MainWindow::onRemoveProjectFolder()
+{
+    qDeleteAll(m_projectFoldersList->selectedItems());
+    saveProjectFoldersFromSettingsTab();
+}
+
+/*!
+ * ********************************************************************************************************************************
+ * @brief        Saves the project folder list from the Settings tab to QSettings.
+ *********************************************************************************************************************************/
+void MainWindow::saveProjectFoldersFromSettingsTab() const
+{
+    if (!m_projectFoldersList)
+        return;
+
+    QStringList folders;
+    folders.reserve(m_projectFoldersList->count());
+
+    for (int i = 0; i < m_projectFoldersList->count(); ++i)
+    {
+        const QString path = m_projectFoldersList->item(i)->text().trimmed();
+        if (!path.isEmpty() && !folders.contains(path))
+            folders.append(QDir(path).absolutePath());
+    }
+
+    QSettings s;
+    s.setValue(QString::fromLatin1(kSettingsProjectFolders), folders);
+}
+
+/*!
+ * ********************************************************************************************************************************
+ * @brief        Adds an excluded folder to the current project.
+ *********************************************************************************************************************************/
+void MainWindow::onBrowseExcludeFolder()
+{
+    const QString projectRoot = currentSettingsProject();
+    if (projectRoot.trimmed().isEmpty())
+        return;
+
+    const QString dir = QFileDialog::getExistingDirectory(
+        this, tr("Select Folder to Exclude"), projectRoot,
+        QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
+
+    if (dir.isEmpty())
+        return;
+
+    const QString rel = QDir(projectRoot).relativeFilePath(dir);
+
+    if (m_excludeFoldersList->findItems(rel, Qt::MatchExactly).isEmpty())
+    {
+        auto *item = new QListWidgetItem(rel, m_excludeFoldersList);
+        item->setFlags(item->flags() | Qt::ItemIsEditable);
+    }
+
+    saveSettingsForProject(projectRoot);
+}
+
+/*!
+ * ********************************************************************************************************************************
+ * @brief        Removes selected excluded folders from the Settings tab.
+ *********************************************************************************************************************************/
+void MainWindow::onRemoveExcludeFolder()
+{
+    qDeleteAll(m_excludeFoldersList->selectedItems());
+
+    const QString projectRoot = currentSettingsProject();
+    if (!projectRoot.isEmpty())
+        saveSettingsForProject(projectRoot);
 }
 
 /*!
@@ -729,17 +898,31 @@ void MainWindow::setSettingsPanelEnabled(bool enabled)
 void MainWindow::loadSettingsForProject(const QString &projectRoot)
 {
     if (projectRoot.trimmed().isEmpty()) return;
+
     QSettings s;
     const QString id = projectIdForPath(projectRoot);
-    const QStringList includeExts = s.value(QStringLiteral("project/%1/includeExts").arg(id), defaultIncludeExts()).toStringList();
-    const QStringList excludeDirs = s.value(QStringLiteral("project/%1/excludeDirs").arg(id), defaultExcludeDirs()).toStringList();
+
+    QStringList includeExts = s.value(QStringLiteral("project/%1/includeExts").arg(id), defaultIncludeExts()).toStringList();
+
+    QStringList excludeDirs = s.value(QStringLiteral("project/%1/excludeDirs").arg(id), defaultExcludeDirs()).toStringList();
+
+    /* ---------- NEW: merge .gitignore ---------- */
+    const QStringList gitignoreDirs = excludeDirsFromGitignore(projectRoot);
+    for (const QString &d : gitignoreDirs)
+    {
+        if (!excludeDirs.contains(d)) excludeDirs.append(d);
+    }
+
     const QString backupFolder = s.value(QStringLiteral("project/%1/backupFolder").arg(id)).toString();
+
     if (m_includeExtEdit) m_includeExtEdit->setText(includeExts.join(QStringLiteral(", ")));
+
     if (m_excludeFoldersList)
     {
         m_excludeFoldersList->blockSignals(true);
         m_excludeFoldersList->clear();
-        for (const QString &ex : excludeDirs)
+
+        for (const QString &ex : std::as_const(excludeDirs))
         {
             auto *item = new QListWidgetItem(ex, m_excludeFoldersList);
             item->setFlags(item->flags() | Qt::ItemIsEditable);
@@ -747,6 +930,7 @@ void MainWindow::loadSettingsForProject(const QString &projectRoot)
 
         m_excludeFoldersList->blockSignals(false);
     }
+
     if (m_backupFolderEdit) m_backupFolderEdit->setText(backupFolder);
 }
 

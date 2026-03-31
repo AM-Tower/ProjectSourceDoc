@@ -3,10 +3,12 @@
 # @file cmake/PackSource.cmake
 # @brief Create a single packaged source file for AI review
 # @authors Jeffrey Scott Flesher with the help of AI: Copilot
-# @date 2026-03-06
+# @date 2026-03-31
 # --------------------------------------------------------------------------------------------------
 
 cmake_minimum_required(VERSION 3.25)
+
+message(STATUS "PROJECT_ROOT = '${PROJECT_ROOT}'")
 
 # --------------------------------------------------------------------------------
 # Validate input
@@ -102,7 +104,7 @@ function(psd_write_project_tree out_file project_root)
 
     # IMPORTANT: ignore patterns come from EXCLUDE_DIRS (includes build* so build-wsl is excluded)
     execute_process(
-      COMMAND bash -lc "cd '${project_root}' && tree -a -I '${_tree_ignore}'"
+      COMMAND bash -lc "cd '${project_root}' && tree -a --dirsfirst -I '${_tree_ignore}'"
       OUTPUT_VARIABLE _tree_out
       OUTPUT_STRIP_TRAILING_WHITESPACE
       ERROR_VARIABLE _tree_err

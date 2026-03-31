@@ -35,6 +35,7 @@
 #include <QStatusBar>
 #include <QTimer>
 #include <QUrl>
+#include <utility> // for std::as_const
 
 namespace
 {
@@ -222,68 +223,68 @@ QString ProjectSourceExporter::backupProjectToTimestampedFolder(QWidget *parent,
  * @details      This is the core implementation used by all overloads. It validates the project,
  *               invokes cmake/PackSource.cmake, captures output, and reports progress.
  *********************************************************************************************************************************/
-QString ProjectSourceExporter::generateAndReturnPath(QWidget *parent, QStatusBar *status, const QString &projectRoot, const QStringList &includeExts, const QStringList &excludeDirs, QString *outProcessLog)
+QString ProjectSourceExporter::generateAndReturnPath( QWidget *parent, QStatusBar *status, const QString &projectRoot, const QStringList &includeExts, const QStringList &excludeDirs, QString *outProcessLog)
 {
-    if (projectRoot.trimmed().isEmpty() || !QDir(projectRoot).exists())
-    {
-        if (outProcessLog) { *outProcessLog += QObject::tr("ERROR: Invalid project root: %1\n").arg(projectRoot); }
-        postStatus(status, QObject::tr("Invalid project root."), 5000);
-        return {};
-    }
-    const QString cmakeLists = QDir(projectRoot).filePath(QStringLiteral("CMakeLists.txt"));
-    const QString scriptPath = QDir(projectRoot).filePath(QStringLiteral("cmake/PackSource.cmake"));
-    if (!QFileInfo::exists(cmakeLists) || !QFileInfo::exists(scriptPath))
-    {
-        if (outProcessLog) { *outProcessLog += QObject::tr("ERROR: Missing CMakeLists.txt or PackSource.cmake\n"); }
-        QMessageBox::warning(parent, QObject::tr("Project Source"), QObject::tr("Required CMake files are missing."));
-        postStatus(status, QObject::tr("Project source generation failed."), 5000);
-        return {};
-    }
+    Q_UNUSED(parent)
+
+    if (projectRoot.trimmed().isEmpty()) return {};
+
+    if (!QDir(projectRoot).exists()) return {};
+
+    QString log;
+    QTextStream logStream(&log);
+
     postStatus(status, QObject::tr("Generating Project‑Source.txt..."));
+
+    /* =====================================================================
+     * Invoke PackSource.cmake
+     * ===================================================================== */
+
     QProcess proc;
-    proc.setWorkingDirectory(projectRoot);
     proc.setProgram(QStringLiteral("cmake"));
-    proc.setArguments({QStringLiteral("-DPROJECT_ROOT=%1").arg(projectRoot),
-                       QStringLiteral("-DINCLUDE_EXTENSIONS=%1").arg(includeExts.join(';')),
-                       QStringLiteral("-DEXCLUDE_DIRS=%1").arg(excludeDirs.join(';')), QStringLiteral("-P"), scriptPath});
+
+    QStringList args;
+
+    args << QStringLiteral("-DPROJECT_ROOT=%1").arg(projectRoot)
+         << QStringLiteral("-DINCLUDE_EXTS=%1").arg(includeExts.join(';'))
+         << QStringLiteral("-DEXCLUDE_DIRS=%1").arg(excludeDirs.join(';'))
+         << QStringLiteral("-P")
+         << QStringLiteral("cmake/PackSource.cmake");
+
+    proc.setArguments(args);
+    proc.setWorkingDirectory(projectRoot);
+
     proc.start();
-    proc.waitForFinished(-1);
-    if (outProcessLog)
+    if (!proc.waitForFinished(-1))
     {
-        *outProcessLog += QString::fromUtf8(proc.readAllStandardOutput());
-        *outProcessLog += QString::fromUtf8(proc.readAllStandardError());
+        log += QObject::tr("ERROR: cmake process did not finish.\n");
+        if (outProcessLog) *outProcessLog = log;
+        return {};
     }
+
+    log += QString::fromUtf8(proc.readAllStandardOutput());
+    log += QString::fromUtf8(proc.readAllStandardError());
+
     if (proc.exitStatus() != QProcess::NormalExit || proc.exitCode() != 0)
     {
-        postStatus(status, QObject::tr("Project source generation failed."), 5000);
+        log += QObject::tr("ERROR: Project‑Source generation failed.\n");
+        if (outProcessLog) *outProcessLog = log;
         return {};
     }
+
     const QString outPath = QDir(projectRoot).filePath(QStringLiteral("Project-Source.txt"));
+
     if (!QFileInfo::exists(outPath))
     {
-        if (outProcessLog) { *outProcessLog += QObject::tr("ERROR: Output file not found: %1\n").arg(outPath); }
+        log += QObject::tr("ERROR: Project‑Source.txt was not created.\n");
+        if (outProcessLog) *outProcessLog = log;
         return {};
     }
-    postStatus(status, QObject::tr("Project‑Source.txt generated."), 5000);
-    // Append project tree to Project-Source.txt
-    {
-        QString treeLog;
-        const QString treePath = ProjectSourceExporter::createTree(parent, status, projectRoot, includeExts, excludeDirs, &treeLog);
-        if (!treePath.isEmpty())
-        {
-            QFile src(treePath);
-            QFile dst(outPath);
-            if (src.open(QIODevice::ReadOnly | QIODevice::Text) && dst.open(QIODevice::Append | QIODevice::Text))
-            {
-                QTextStream ts(&dst);
-                ts << "\n\n"
-                   << "=====================================================================\n"
-                   << " Project Directory Tree\n"
-                   << "=====================================================================\n\n";
-                ts << src.readAll();
-            }
-        }
-    }
+
+    if (outProcessLog) *outProcessLog = log;
+
+    postStatus(status, QObject::tr("Project‑Source.txt generated"), 3000);
+
     return outPath;
 }
 
@@ -295,11 +296,7 @@ QString ProjectSourceExporter::generateAndReturnPath(QWidget *parent, QStatusBar
  *               to Project-Tree.txt in the project root. This function is stateless and
  *               uses only the parameters provided by the caller.
  *****************************************************************************************************************************/
-QString ProjectSourceExporter::createTree(QWidget *parent,
-                                          QStatusBar *status,
-                                          const QString &projectRoot,
-                                          const QStringList &includeExts,
-                                          const QStringList &excludeDirs, QString *outLog)
+QString ProjectSourceExporter::createTree(QWidget *parent, QStatusBar *status, const QString &projectRoot, const QStringList &includeExts, const QStringList &excludeDirs, QString *outLog)
 {
     QString log;
 
@@ -329,21 +326,21 @@ QString ProjectSourceExporter::createTree(QWidget *parent,
      * ************************************************************************************************************************
      * @brief Recursive aligned tree walker with full ancestor-last tracking.
      *************************************************************************************************************************/
-    std::function<void(const QString &, const QVector<bool> &)> walk =
-        [&](const QString &absPath, const QVector<bool> &lastFlags)
+    std::function<void(const QString &, const QVector<bool> &)> walk = [&](const QString &absPath, const QVector<bool> &lastFlags)
     {
         QDir dir(absPath);
         QFileInfoList entries = dir.entryInfoList(
             QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System,
             QDir::DirsFirst | QDir::Name);
 
-               // Filter out excluded entries
+        // Filter out excluded entries
         QList<QFileInfo> filtered;
-        for (const QFileInfo &fi : entries)
+        filtered.reserve(entries.size());
+
+        for (const QFileInfo &fi : std::as_const(entries))
         {
             const QString rel = rootDir.relativeFilePath(fi.absoluteFilePath());
-            if (!matchAnyExclude(rel, fi.fileName(), excludeDirs))
-                filtered.append(fi);
+            if (!matchAnyExclude(rel, fi.fileName(), excludeDirs)) filtered.append(fi);
         }
 
                // Sort: directories first, then files, both alphabetically

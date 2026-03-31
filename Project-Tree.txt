@@ -1,64 +1,78 @@
 .
-├── AppDir
-│    ├── logs
-│    │    └── deploy_20260328_132013.log
-│    ├── tools
-│    │    ├── linuxdeploy-plugin-qt-x86_64.AppImage
-│    │    └── linuxdeploy-x86_64.AppImage
-│    ├── usr
-│    │    ├── bin
-│    │    │    └── ProjectSourceDoc
-│    │    ├── lib
-│    │    │    ├── libb2.so.1
-│    │    │    ├── libbrotlicommon.so.1
-│    │    │    ├── libbrotlidec.so.1
-│    │    │    ├── libbz2.so.1
-│    │    │    ├── libcap.so.2
-│    │    │    ├── libcrypto.so.3
-│    │    │    ├── libdbus-1.so.3
-│    │    │    ├── libdouble-conversion.so.3
-│    │    │    ├── libglib-2.0.so.0
-│    │    │    ├── libgomp.so.1
-│    │    │    ├── libgraphite2.so.3
-│    │    │    ├── libicudata.so.77
-│    │    │    ├── libicui18n.so.77
-│    │    │    ├── libicuuc.so.77
-│    │    │    ├── liblzma.so.5
-│    │    │    ├── libpcre2-16.so.0
-│    │    │    ├── libpcre2-8.so.0
-│    │    │    ├── libpng16.so.16
-│    │    │    ├── libQt6Concurrent.so.6
-│    │    │    ├── libQt6Core.so.6
-│    │    │    ├── libQt6DBus.so.6
-│    │    │    ├── libQt6Gui.so.6
-│    │    │    ├── libQt6Svg.so.6
-│    │    │    ├── libQt6Widgets.so.6
-│    │    │    ├── libsystemd.so.0
-│    │    │    ├── libXau.so.6
-│    │    │    ├── libXext.so.6
-│    │    │    ├── libxkbcommon.so.0
-│    │    │    ├── libxml2.so.2
-│    │    │    └── libzstd.so.1
-│    │    └── share
-│    │         ├── applications
-│    │         │    └── ProjectSourceDoc.desktop
-│    │         ├── icons
-│    │         │    └── hicolor
-│    │         │         ├── 128x128
-│    │         │         │    └── apps
-│    │         │         ├── 16x16
-│    │         │         │    └── apps
-│    │         │         ├── 256x256
-│    │         │         │    └── apps
-│    │         │         ├── 32x32
-│    │         │         │    └── apps
-│    │         │         ├── 64x64
-│    │         │         │    └── apps
-│    │         │         └── scalable
-│    │         │              └── apps
-│    │         │                   └── ProjectSourceDoc.svg
-│    │         └── pixmaps
-│    └── ProjectSourceDoc.svg
+├── 0-Backup
+│    └── ProjectSourceDoc
+│         └── 2026-03-31_09-16-44
+│              ├── 0-Backup
+│              │    └── ProjectSourceDoc
+│              ├── bash
+│              │    ├── backup.sh
+│              │    ├── deep-runtime-diagnose.sh
+│              │    ├── git.sh
+│              │    ├── io.github.am-tower.ProjectSourceDoc.metainfo.xml
+│              │    ├── library.sh
+│              │    └── source_files.sh
+│              ├── cmake
+│              │    ├── macos_notarize_dmg.cmake
+│              │    └── PackSource.cmake
+│              ├── i18n
+│              │    ├── ProjectSourceDoc_en.ts
+│              │    └── ProjectSourceDoc_zh_CN.ts
+│              ├── resources
+│              │    ├── icons
+│              │    │    ├── dark
+│              │    │    │    ├── app.svg
+│              │    │    │    ├── doc.svg
+│              │    │    │    ├── exit.svg
+│              │    │    │    ├── help.svg
+│              │    │    │    ├── log.svg
+│              │    │    │    ├── settings.svg
+│              │    │    │    ├── sound.svg
+│              │    │    │    ├── update.svg
+│              │    │    │    └── video.svg
+│              │    │    └── light
+│              │    │         ├── app.svg
+│              │    │         ├── doc.svg
+│              │    │         ├── exit.svg
+│              │    │         ├── help.svg
+│              │    │         ├── log.svg
+│              │    │         ├── settings.svg
+│              │    │         ├── sound.svg
+│              │    │         ├── update.svg
+│              │    │         └── video.svg
+│              │    └── ProjectSourceDoc.qrc
+│              ├── src
+│              │    ├── AppLogUtils.cpp
+│              │    ├── AppLogUtils.h
+│              │    ├── EmbeddedDocs.cpp
+│              │    ├── EmbeddedDocs.h
+│              │    ├── main.cpp
+│              │    ├── MainWindow.cpp
+│              │    ├── MainWindow.h
+│              │    ├── MainWindowTheme.cpp
+│              │    ├── ProjectPaths.cpp
+│              │    ├── ProjectPaths.h
+│              │    ├── ProjectSourceExporter.cpp
+│              │    ├── ProjectSourceExporter.h
+│              │    ├── StatusBarQueue.cpp
+│              │    └── StatusBarQueue.h
+│              ├── .gitignore
+│              ├── AI.md
+│              ├── CMakeLists.txt
+│              ├── deploy.sh
+│              ├── error-log.txt
+│              ├── message-queue.txt
+│              ├── Plan.txt
+│              ├── Project-Source.txt
+│              ├── Project-Tree.txt
+│              ├── README.md
+│              └── README_zh_CN.md
+├── bash
+│    ├── backup.sh
+│    ├── deep-runtime-diagnose.sh
+│    ├── git.sh
+│    ├── io.github.am-tower.ProjectSourceDoc.metainfo.xml
+│    ├── library.sh
+│    └── source_files.sh
 ├── cmake
 │    ├── macos_notarize_dmg.cmake
 │    └── PackSource.cmake
@@ -104,9 +118,12 @@
 │    ├── StatusBarQueue.cpp
 │    └── StatusBarQueue.h
 ├── .gitignore
+├── AI.md
 ├── CMakeLists.txt
 ├── deploy.sh
+├── error-log.txt
 ├── message-queue.txt
+├── Plan.txt
 ├── Project-Source.txt
 ├── Project-Tree.txt
 ├── README.md

@@ -73,6 +73,11 @@ class MainWindow final : public QMainWindow
         void onOpenRecentTriggered();
         void onClearRecentTriggered();
 
+        void onBrowseProjectFolder();
+        void onRemoveProjectFolder();
+        void onBrowseExcludeFolder();
+        void onRemoveExcludeFolder();
+
     private:
         /* --------------------------- Core UI --------------------------- */
         void createActions();
@@ -109,6 +114,12 @@ class MainWindow final : public QMainWindow
         static QStringList parseExtensionsText(const QString &text);
         static QStringList defaultIncludeExts();
         static QStringList defaultExcludeDirs();
+
+        /*!
+         * ********************************************************************************************************************************
+         * @brief        Get exclude list from .gitignore.
+         *********************************************************************************************************************************/
+        QStringList excludeDirsFromGitignore(const QString &projectRoot);
 
     private:
         /* --------------------------- Core Members --------------------------- */
