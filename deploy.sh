@@ -1511,6 +1511,25 @@ verify_no_libcap_bundled()
 }
 
 ################################################################################
+# @brief  verify_no_unsafe_runtime_libs
+################################################################################
+verify_no_unsafe_runtime_libs()
+{
+    section "Verifying no unsafe runtime libraries are present"
+
+    local bad=0
+    for lib in libcap.so.2 libsystemd.so.0; do
+        if find AppDir -name "$lib" | grep -q .; then
+            warn "Unsafe runtime library detected: $lib"
+            bad=1
+        fi
+    done
+
+    [[ "$bad" -eq 0 ]] || fail "Unsafe libraries present before AppRun"
+    pass "No unsafe runtime libraries present"
+}
+
+################################################################################
 # @brief  audit_appimage_for_unsafe_libs
 ################################################################################
 audit_appimage_for_unsafe_libs()
@@ -1564,12 +1583,12 @@ run_linuxdeploy_appdir_only()
 ################################################################################
 run_linuxdeploy()
 {
-    section "Running linuxdeploy + Qt Plugin (single‑Qt enforced)"
+    section "Running linuxdeploy + Qt Plugin (single‑Qt enforced, Fedora‑safe)"
 
     [[ "${OS}" != "linux" ]] && return 0
 
     # ─────────────────────────────────────────────────────────────
-    # ✅ FORCE SINGLE Qt ORIGIN (CRITICAL)
+    # ✅ FORCE A SINGLE Qt (ABSOLUTE)
     # ─────────────────────────────────────────────────────────────
     export QT_ROOT="/opt/Qt/6.10.2/gcc_64"
     export QMAKE="${QT_ROOT}/bin/qmake"
@@ -1577,8 +1596,11 @@ run_linuxdeploy()
     export LD_LIBRARY_PATH="${QT_ROOT}/lib"
     export QT_PLUGIN_PATH="${QT_ROOT}/plugins"
 
+    # Clear any inherited preload (critical for AppRun test)
+    unset LD_PRELOAD
+
     # ─────────────────────────────────────────────────────────────
-    # ✅ HARD EXCLUDE SYSTEM Qt + FEDORA‑UNSAFE LIBS
+    # ✅ HARD BLOCK UNSAFE & SYSTEM LIBS (BEFORE linuxdeploy)
     # ─────────────────────────────────────────────────────────────
     export LINUXDEPLOY_EXCLUDE_LIBS="
         libQt6Core.so.6;
@@ -1591,8 +1613,15 @@ run_linuxdeploy()
         libsystemd.so.0
     "
 
+    # Extra guard for plugin‑qt oddities
+    export LINUXDEPLOY_BLACKLIST_LIBS="libcap.so.2:libsystemd.so.0"
+
+    # Do not strip — avoids Qt private symbol breakage
     export LINUXDEPLOY_PLUGIN_QT_NO_STRIP=1
 
+    # ─────────────────────────────────────────────────────────────
+    # ✅ RUN linuxdeploy
+    # ─────────────────────────────────────────────────────────────
     "${LINUXDEPLOY_BIN}" \
         --appdir "${APPDIR}" \
         --desktop-file "${APPDIR_APPS}/${DESKTOP_FILE}" \
@@ -1601,7 +1630,7 @@ run_linuxdeploy()
         >> "${INSTALLER_LOG}" 2>&1 \
         || fail "linuxdeploy failed"
 
-    pass "linuxdeploy completed with single‑Qt enforcement"
+    pass "linuxdeploy completed (single‑Qt, unsafe libs blocked)"
 }
 
 ################################################################################
@@ -1981,30 +2010,38 @@ main()
             run_linuxdeploy;
             install_appdata;
             validate_bundled_qt;
-            scan_qt_plugins;          # NEW: plugin dependency scanner
+            scan_qt_plugins;
 
-            # AppDir-only tests (must NOT build AppImage and must NOT run AppImage)
+            # ✅ MUST happen BEFORE any execution
+            verify_no_unsafe_runtime_libs;
+
+            # AppDir-only tests
             run_tests;
+
+            # These are now safety nets (should be no-ops)
             remove_problem_libraries;
             verify_no_libcap_bundled;
+
             build_appimage_from_appdir;
             audit_appimage_for_unsafe_libs;
             run_appimage_test;
-            run_appimage_runtime_diagnostics;   # NEW: deep runtime harness
+            run_appimage_runtime_diagnostics;
 
         else
-            # AppDir-only mode (populate only)
+            # AppDir-only mode
             run_linuxdeploy_appdir_only;
             install_appdata;
             validate_bundled_qt;
             scan_qt_plugins;
+
+            verify_no_unsafe_runtime_libs;
+
             remove_problem_libraries;
             verify_no_libcap_bundled;
             build_appimage_from_appdir;
             audit_appimage_for_unsafe_libs;
             run_appimage_runtime_diagnostics;
         fi
-
         # Only reached if AppImage test passed
         finalise_output;
         print_summary;
