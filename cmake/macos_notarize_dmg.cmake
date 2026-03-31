@@ -3,7 +3,7 @@
 # @file cmake/macos_notarize_dmg.cmake
 # @brief Notarize DMG macOS packages
 # @authors Jeffrey Scott Flesher with the help of AI: Copilot
-# @date 2026-03-05
+# @date 2026-03-31
 # @details
 # Inputs:
 #   DMG_DIR        - directory where the DMG was generated

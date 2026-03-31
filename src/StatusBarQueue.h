@@ -3,7 +3,7 @@
  * @file StatusBarQueue.h
  * @brief Thread-safe queued status bar message dispatcher.
  * @authors     Jeffrey Scott Flesher using AI: Copilot
- * @date        2026-03-26
+ * @date        2026-03-31
  *
  * This file defines StatusBarQueue, a small utility class that queues status messages with
  * per-message durations. Messages can be enqueued from any thread and are displayed sequentially

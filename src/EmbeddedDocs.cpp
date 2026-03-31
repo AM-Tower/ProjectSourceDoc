@@ -3,7 +3,7 @@
  * @file EmbeddedDocs.cpp
  * @brief Implementation of embedded documentation helpers.
  * @authors     Jeffrey Scott Flesher using AI: Copilot
- * @date        2026-03-26
+ * @date        2026-03-31
  *
  * @details
  * Implements psd::docs utilities used to load locale-aware README markdown from Qt resources
@@ -41,10 +41,7 @@ namespace psd::docs
     bool readResourceText(const QString &path, QString &outText)
     {
         QFile file(path);
-        if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
-        {
-            return false;
-        }
+        if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) { return false; }
 
         outText = QString::fromUtf8(file.readAll());
         return true;
@@ -59,15 +56,9 @@ namespace psd::docs
         QString markdown;
         const QString locale = normalizedLocaleForDocs();
 
-        if (readResourceText(QStringLiteral(":/README_%1.md").arg(locale), markdown))
-        {
-            return markdown;
-        }
+        if (readResourceText(QStringLiteral(":/README_%1.md").arg(locale), markdown)) { return markdown; }
 
-        if (readResourceText(QStringLiteral(":/README.md"), markdown))
-        {
-            return markdown;
-        }
+        if (readResourceText(QStringLiteral(":/README.md"), markdown)) { return markdown; }
 
         return QObject::tr("Unable to load embedded README.md from application resources.");
     }

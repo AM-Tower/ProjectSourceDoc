@@ -9,7 +9,7 @@
  *               backup logic to ProjectSourceExporter.
  *
  * @author       Jeffrey Scott Flesher
- * @date         2026-03-24
+ * @date         2026-03-31
  *********************************************************************************************************************************/
 
 #include "MainWindow.h"
@@ -109,8 +109,7 @@ void MainWindow::loadRecentProjects()
     for (const QString &p : std::as_const(m_recentProjects))
     {
         const QString abs = QDir(p).absolutePath();
-        if (!abs.trimmed().isEmpty() && QDir(abs).exists() && !cleaned.contains(abs))
-            cleaned.append(abs);
+        if (!abs.trimmed().isEmpty() && QDir(abs).exists() && !cleaned.contains(abs)) cleaned.append(abs);
     }
 
     m_recentProjects = cleaned;
@@ -134,14 +133,12 @@ void MainWindow::saveRecentProjects() const
 void MainWindow::addRecentProject(const QString &folderPath)
 {
     const QString abs = QDir(folderPath).absolutePath();
-    if (abs.trimmed().isEmpty())
-        return;
+    if (abs.trimmed().isEmpty()) return;
 
     m_recentProjects.removeAll(abs);
     m_recentProjects.prepend(abs);
 
-    while (m_recentProjects.size() > kMaxRecentProjects)
-        m_recentProjects.removeLast();
+    while (m_recentProjects.size() > kMaxRecentProjects) m_recentProjects.removeLast();
 
     saveRecentProjects();
     rebuildRecentProjectsMenu();
@@ -154,8 +151,7 @@ void MainWindow::addRecentProject(const QString &folderPath)
         list.prepend(abs);
         s.setValue(QString::fromLatin1(kSettingsProjectFolders), list);
 
-        if (m_projectFoldersList)
-            loadProjectFoldersForSettingsTab();
+        if (m_projectFoldersList) loadProjectFoldersForSettingsTab();
     }
 }
 
@@ -188,8 +184,7 @@ void MainWindow::rebuildRecentProjectsMenu()
     if (!m_clearRecentAction)
     {
         m_clearRecentAction = new QAction(tr("Clear Recent"), this);
-        connect(m_clearRecentAction, &QAction::triggered, this,
-                &MainWindow::onClearRecentTriggered);
+        connect(m_clearRecentAction, &QAction::triggered, this, &MainWindow::onClearRecentTriggered);
     }
 
     m_recentMenu->addAction(m_clearRecentAction);
@@ -204,21 +199,17 @@ void MainWindow::createActions()
     m_openAction = new QAction(themedIcon("doc"), tr("&Open…"), this);
     connect(m_openAction, &QAction::triggered, this, &MainWindow::onOpenTriggered);
 
-    m_projectSourceAction =
-        new QAction(themedIcon("update"), tr("Create Project‑Source.txt"), this);
-    connect(m_projectSourceAction, &QAction::triggered, this,
-            &MainWindow::onProjectSourceTriggered);
+    m_projectSourceAction = new QAction(themedIcon("update"), tr("Create Project‑Source.txt"), this);
+    connect(m_projectSourceAction, &QAction::triggered, this, &MainWindow::onProjectSourceTriggered);
 
     m_exitAction = new QAction(themedIcon("exit"), tr("E&xit"), this);
     connect(m_exitAction, &QAction::triggered, this, &QWidget::close);
 
     m_usageAction = new QAction(themedIcon("help"), tr("Usage"), this);
-    connect(m_usageAction, &QAction::triggered, this,
-            [this]() { psd::docs::showUsageDialog(this); });
+    connect(m_usageAction, &QAction::triggered, this, [this]() { psd::docs::showUsageDialog(this); });
 
     m_aboutAction = new QAction(themedIcon("help"), tr("About"), this);
-    connect(m_aboutAction, &QAction::triggered, this,
-            [this]() { statusBar()->showMessage( tr("ProjectSource — Generate Project‑Source.txt from a project."), 4000); });
+    connect(m_aboutAction, &QAction::triggered, this, [this]() { statusBar()->showMessage( tr("ProjectSource — Generate Project‑Source.txt from a project."), 4000); });
 }
 
 /*!
@@ -344,8 +335,7 @@ void MainWindow::showFileInLogTab(const QString &path, const QString &header)
     appendToLog(text);
     m_currentLogFilePath = path;
 
-    if (m_tabs)
-        m_tabs->setCurrentIndex(0);
+    if (m_tabs) m_tabs->setCurrentIndex(0);
 }
 
 /*!
@@ -473,16 +463,18 @@ QStringList MainWindow::defaultExcludeDirs()
  * @param[in] projectRoot Absolute path to the project root directory.
  *
  * @return  A list of relative directory paths to exclude, with no trailing slashes.
- * ********************************************************************************************************************************
- */
+ * *******************************************************************************************************************************/
 QStringList MainWindow::excludeDirsFromGitignore(const QString &projectRoot)
 {
     QStringList result;
 
-    const QString gitignorePath = QDir(projectRoot).filePath(QStringLiteral(".gitignore"));
-    QFile file(gitignorePath);
+    const QString gitignorePath =
+        QDir(projectRoot).filePath(QStringLiteral(".gitignore"));
 
-    if (!file.exists() || !file.open(QIODevice::ReadOnly | QIODevice::Text)) return result;
+    QFile file(gitignorePath);
+    if (!file.exists() ||
+        !file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return result;
 
     QTextStream in(&file);
 
@@ -490,27 +482,27 @@ QStringList MainWindow::excludeDirsFromGitignore(const QString &projectRoot)
     {
         QString line = in.readLine().trimmed();
 
-        // Skip comments and empty lines
-        if (line.isEmpty() || line.startsWith('#')) continue;
+               // Skip empty lines and comments
+        if (line.isEmpty() || line.startsWith('#'))
+            continue;
 
-        // Ignore negations (!important)
-        if (line.startsWith('!')) continue;
+               // Ignore negation rules
+        if (line.startsWith('!'))
+            continue;
 
-        // Normalize directory rules:
-        //  - Must end with '/'
-        //  - Must not contain a dot-extension file rule
-        const bool endsWithSlash = line.endsWith('/');
-        const bool looksLikeFile = line.contains('.') && !line.contains('*');
+               // ✅ Directory rules ONLY: must end with '/'
+        if (!line.endsWith('/'))
+            continue;
 
-        if (!endsWithSlash || looksLikeFile) continue;
-
-        // Remove trailing slash
+               // Remove trailing '/'
         line.chop(1);
 
-        // Convert gitignore-style */ to QDir glob
-        if (line.endsWith("/*")) line.chop(2);
+               // Normalize gitignore-style "dir/*"
+        if (line.endsWith("/*"))
+            line.chop(2);
 
-        if (!result.contains(line)) result.append(line);
+        if (!result.contains(line))
+            result.append(line);
     }
 
     return result;
@@ -560,8 +552,7 @@ void MainWindow::createSettingsTab()
 
     m_projectFoldersList = new QListWidget(left);
     m_projectFoldersList->setSelectionMode(QAbstractItemView::SingleSelection);
-    m_projectFoldersList->setEditTriggers(QAbstractItemView::DoubleClicked |
-                                          QAbstractItemView::EditKeyPressed);
+    m_projectFoldersList->setEditTriggers(QAbstractItemView::DoubleClicked | QAbstractItemView::EditKeyPressed);
 
     leftLayout->addWidget(m_projectFoldersList, 1);
 
@@ -581,8 +572,7 @@ void MainWindow::createSettingsTab()
     QGroupBox *includeBox = new QGroupBox(tr("Include file extensions"), right);
     QVBoxLayout *includeLayout = new QVBoxLayout(includeBox);
 
-    includeLayout->addWidget(
-        new QLabel(tr("Comma / space / semicolon separated (e.g. cpp, h, md)"), includeBox));
+    includeLayout->addWidget(new QLabel(tr("Comma / space / semicolon separated (e.g. cpp, h, md)"), includeBox));
 
     m_includeExtEdit = new QLineEdit(includeBox);
     includeLayout->addWidget(m_includeExtEdit);
@@ -594,8 +584,7 @@ void MainWindow::createSettingsTab()
     QVBoxLayout *excludeLayout = new QVBoxLayout(excludeBox);
 
     m_excludeFoldersList = new QListWidget(excludeBox);
-    m_excludeFoldersList->setEditTriggers(QAbstractItemView::DoubleClicked |
-                                          QAbstractItemView::EditKeyPressed);
+    m_excludeFoldersList->setEditTriggers(QAbstractItemView::DoubleClicked | QAbstractItemView::EditKeyPressed);
 
     excludeLayout->addWidget(m_excludeFoldersList, 1);
 
@@ -613,8 +602,7 @@ void MainWindow::createSettingsTab()
     QGroupBox *backupBox = new QGroupBox(tr("Backup"), right);
     QVBoxLayout *backupLayout = new QVBoxLayout(backupBox);
 
-    backupLayout->addWidget(new QLabel(
-        tr("Backup base folder. A timestamped subfolder is created per run."), backupBox));
+    backupLayout->addWidget(new QLabel(tr("Backup base folder. A timestamped subfolder is created per run."), backupBox));
 
     QHBoxLayout *backupRow = new QHBoxLayout();
     m_backupFolderEdit = new QLineEdit(backupBox);
@@ -651,38 +639,27 @@ void MainWindow::createSettingsTab()
             });
 
     /* --------- NEW: Project folders --------- */
-    connect(m_addProjectFolderBtn, &QPushButton::clicked,
-            this, &MainWindow::onBrowseProjectFolder);
+    connect(m_addProjectFolderBtn, &QPushButton::clicked, this, &MainWindow::onBrowseProjectFolder);
 
-    connect(m_removeProjectFolderBtn, &QPushButton::clicked,
-            this, &MainWindow::onRemoveProjectFolder);
+    connect(m_removeProjectFolderBtn, &QPushButton::clicked, this, &MainWindow::onRemoveProjectFolder);
 
     /* --------- NEW: Exclude folders --------- */
-    connect(m_addExcludeBrowseBtn, &QPushButton::clicked,
-            this, &MainWindow::onBrowseExcludeFolder);
+    connect(m_addExcludeBrowseBtn, &QPushButton::clicked, this, &MainWindow::onBrowseExcludeFolder);
 
-    connect(m_removeExcludeBtn, &QPushButton::clicked,
-            this, &MainWindow::onRemoveExcludeFolder);
+    connect(m_removeExcludeBtn, &QPushButton::clicked, this, &MainWindow::onRemoveExcludeFolder);
 
     /* --------- Backup browse (existing) --------- */
     connect(m_backupBrowseBtn, &QPushButton::clicked, this,
             [this]()
             {
                 const QString projectRoot = currentSettingsProject();
-                if (projectRoot.trimmed().isEmpty())
-                    return;
+                if (projectRoot.trimmed().isEmpty()) return;
 
-                const QString start =
-                    !m_backupFolderEdit->text().trimmed().isEmpty()
-                        ? m_backupFolderEdit->text().trimmed()
-                        : projectRoot;
+                const QString start = !m_backupFolderEdit->text().trimmed().isEmpty() ? m_backupFolderEdit->text().trimmed() : projectRoot;
 
-                const QString dir = QFileDialog::getExistingDirectory(
-                    this, tr("Select Backup Folder"), start,
-                    QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
+                const QString dir = QFileDialog::getExistingDirectory(this, tr("Select Backup Folder"), start, QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
 
-                if (dir.isEmpty())
-                    return;
+                if (dir.isEmpty()) return;
 
                 m_backupFolderEdit->setText(QDir(dir).absolutePath());
                 saveSettingsForProject(projectRoot);
@@ -695,16 +672,11 @@ void MainWindow::createSettingsTab()
  *********************************************************************************************************************************/
 void MainWindow::onBrowseProjectFolder()
 {
-    const QString start = !m_openProjectRoot.isEmpty()
-    ? m_openProjectRoot
-    : QDir::homePath();
+    const QString start = !m_openProjectRoot.isEmpty() ? m_openProjectRoot : QDir::homePath();
 
-    const QString dir = QFileDialog::getExistingDirectory(
-        this, tr("Select Project Folder"), start,
-        QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
+    const QString dir = QFileDialog::getExistingDirectory(this, tr("Select Project Folder"), start, QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
 
-    if (dir.isEmpty())
-        return;
+    if (dir.isEmpty()) return;
 
     const QString abs = QDir(dir).absolutePath();
 
@@ -731,8 +703,7 @@ void MainWindow::onRemoveProjectFolder()
  *********************************************************************************************************************************/
 void MainWindow::saveProjectFoldersFromSettingsTab() const
 {
-    if (!m_projectFoldersList)
-        return;
+    if (!m_projectFoldersList) return;
 
     QStringList folders;
     folders.reserve(m_projectFoldersList->count());
@@ -740,8 +711,7 @@ void MainWindow::saveProjectFoldersFromSettingsTab() const
     for (int i = 0; i < m_projectFoldersList->count(); ++i)
     {
         const QString path = m_projectFoldersList->item(i)->text().trimmed();
-        if (!path.isEmpty() && !folders.contains(path))
-            folders.append(QDir(path).absolutePath());
+        if (!path.isEmpty() && !folders.contains(path)) folders.append(QDir(path).absolutePath());
     }
 
     QSettings s;
@@ -755,24 +725,15 @@ void MainWindow::saveProjectFoldersFromSettingsTab() const
 void MainWindow::onBrowseExcludeFolder()
 {
     const QString projectRoot = currentSettingsProject();
-    if (projectRoot.trimmed().isEmpty())
-        return;
-
-    const QString dir = QFileDialog::getExistingDirectory(
-        this, tr("Select Folder to Exclude"), projectRoot,
-        QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
-
-    if (dir.isEmpty())
-        return;
-
+    if (projectRoot.trimmed().isEmpty()) return;
+    const QString dir = QFileDialog::getExistingDirectory(this, tr("Select Folder to Exclude"), projectRoot, QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
+    if (dir.isEmpty()) return;
     const QString rel = QDir(projectRoot).relativeFilePath(dir);
-
     if (m_excludeFoldersList->findItems(rel, Qt::MatchExactly).isEmpty())
     {
         auto *item = new QListWidgetItem(rel, m_excludeFoldersList);
         item->setFlags(item->flags() | Qt::ItemIsEditable);
     }
-
     saveSettingsForProject(projectRoot);
 }
 
@@ -783,10 +744,8 @@ void MainWindow::onBrowseExcludeFolder()
 void MainWindow::onRemoveExcludeFolder()
 {
     qDeleteAll(m_excludeFoldersList->selectedItems());
-
     const QString projectRoot = currentSettingsProject();
-    if (!projectRoot.isEmpty())
-        saveSettingsForProject(projectRoot);
+    if (!projectRoot.isEmpty()) saveSettingsForProject(projectRoot);
 }
 
 /*!
@@ -876,19 +835,11 @@ void MainWindow::saveSettingsForProject(const QString &projectRoot) const
 void MainWindow::setSettingsPanelEnabled(bool enabled)
 {
     if (m_includeExtEdit)      m_includeExtEdit->setEnabled(enabled);
-
     if (m_excludeFoldersList)  m_excludeFoldersList->setEnabled(enabled);
-
     if (m_addExcludeBrowseBtn) m_addExcludeBrowseBtn->setEnabled(enabled);
-
-    if (m_removeExcludeBtn)
-        m_removeExcludeBtn->setEnabled(enabled);
-
-    if (m_backupFolderEdit)
-        m_backupFolderEdit->setEnabled(enabled);
-
-    if (m_backupBrowseBtn)
-        m_backupBrowseBtn->setEnabled(enabled);
+    if (m_removeExcludeBtn)    m_removeExcludeBtn->setEnabled(enabled);
+    if (m_backupFolderEdit)    m_backupFolderEdit->setEnabled(enabled);
+    if (m_backupBrowseBtn)     m_backupBrowseBtn->setEnabled(enabled);
 }
 
 /*!

@@ -1,10 +1,10 @@
 # --------------------------------------------------------------------------------------------------
 # CMake
-# @file CMakeLists.txt
+# @file    CMakeLists.txt
 # Project: ProjectSourceDoc
-# @brief Project CMake file
+# @brief   Project CMake file
 # @authors Jeffrey Scott Flesher with the help of AI: Copilot
-# @date 2026-03-30
+# @date    2026-03-31
 # --------------------------------------------------------------------------------------------------
 
 cmake_minimum_required(VERSION 3.25)
@@ -119,6 +119,47 @@ endif()
 
 if(TARGET Qt6::Concurrent)
     target_link_libraries(ProjectSourceDoc PRIVATE Qt6::Concurrent)
+endif()
+
+# --------------------------------------------------------------------------------------------------
+# Unit Tests (Qt Test)
+# --------------------------------------------------------------------------------------------------
+option(BUILD_TESTS "Build ProjectSourceDoc unit tests" ON)
+
+if(BUILD_TESTS)
+    enable_testing()
+
+    find_package(Qt6 REQUIRED COMPONENTS Test)
+
+    add_executable(ProjectSourceDocTests
+        tests/ProjectSourceDocTests.cpp
+
+        # Reuse production sources (exclude main.cpp to avoid duplicate main)
+        src/MainWindow.cpp
+        src/MainWindowTheme.cpp
+        src/StatusBarQueue.cpp
+        src/AppLogUtils.cpp
+        src/ProjectPaths.cpp
+        src/EmbeddedDocs.cpp
+        src/ProjectSourceExporter.cpp
+
+        # Resources (some code paths rely on them)
+        resources/ProjectSourceDoc.qrc
+    )
+
+    target_include_directories(ProjectSourceDocTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+
+    target_link_libraries(ProjectSourceDocTests PRIVATE
+        Qt6::Core
+        Qt6::Gui
+        Qt6::Widgets
+        Qt6::Test
+    )
+
+    add_test(NAME ProjectSourceDocTests COMMAND ProjectSourceDocTests)
 endif()
 
 # --------------------------------------------------------------------------------------------------

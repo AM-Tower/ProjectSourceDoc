@@ -3,7 +3,7 @@
  * @file main.cpp
  * @brief Application entry point for ProjectSourceDoc.
  * @authors     Jeffrey Scott Flesher using AI: Copilot
- * @date        2026-03-26
+ * @date        2026-03-31
  * @details
  *  This file initializes the Qt application object, installs runtime event filters, applies a
  * theme-aware application icon, installs the application translator from embedded resources, and
@@ -165,17 +165,11 @@ static bool loadAppTranslator(QTranslator &translator)
     const QString preferred = QString(":/i18n/ProjectSourceDoc_%1.qm").arg(loc);
 
     // Attempt to load the preferred locale translation first.
-    if (translator.load(preferred))
-    {
-        return true;
-    }
+    if (translator.load(preferred)) { return true; }
 
     // Fall back to English if the preferred locale is unavailable.
     const QString fallback = QString(":/i18n/ProjectSourceDoc_en.qm");
-    if (translator.load(fallback))
-    {
-        return true;
-    }
+    if (translator.load(fallback)) { return true; }
 
     // No translations could be loaded.
     return false;

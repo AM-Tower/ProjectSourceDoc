@@ -3,7 +3,7 @@
  * @file StatusBarQueue.cpp
  * @brief Implements the queued status bar message dispatcher.
  * @authors     Jeffrey Scott Flesher using AI: Copilot
- * @date        2026-03-26
+ * @date        2026-03-31
  * @details
  * This file implements StatusBarQueue, which provides a thread-safe message queue for QStatusBar.
  * Messages are displayed sequentially for a caller-defined duration (seconds) without blocking the
@@ -40,14 +40,8 @@ static QString findProjectRootFrom(const QString &startDir)
     QDir dir(startDir);
     while (dir.exists())
     {
-        if (QFileInfo::exists(dir.filePath(QStringLiteral("CMakeLists.txt"))))
-        {
-            return dir.absolutePath();
-        }
-        if (!dir.cdUp())
-        {
-            break;
-        }
+        if (QFileInfo::exists(dir.filePath(QStringLiteral("CMakeLists.txt")))) { return dir.absolutePath(); }
+        if (!dir.cdUp()) { break; }
     }
     return QString();
 }
@@ -62,14 +56,8 @@ static QString findProjectRootFrom(const QString &startDir)
 static QString messageQueueLogPath()
 {
     QString root = findProjectRootFrom(QDir::currentPath());
-    if (root.isEmpty())
-    {
-        root = findProjectRootFrom(QCoreApplication::applicationDirPath());
-    }
-    if (root.isEmpty())
-    {
-        root = QDir::currentPath();
-    }
+    if (root.isEmpty()) { root = findProjectRootFrom(QCoreApplication::applicationDirPath()); }
+    if (root.isEmpty()) { root = QDir::currentPath(); }
     return QDir(root).filePath(QStringLiteral("message-queue.txt"));
 }
 
@@ -139,10 +127,7 @@ void StatusBarQueue::appendToMessageLog(const QString &message)
     QMutexLocker lock(&g_messageLogMutex);
 
     QFile f(messageQueueLogPath());
-    if (!f.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text))
-    {
-        return;
-    }
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) { return; }
 
     QTextStream ts(&f);
     ts.setEncoding(QStringConverter::Utf8);
@@ -162,10 +147,7 @@ void StatusBarQueue::appendToMessageLog(const QString &message)
  *********************************************************************************************************************************/
 void StatusBarQueue::showNext()
 {
-    if (!m_statusBar)
-    {
-        return;
-    }
+    if (!m_statusBar) { return; }
 
     Item item;
     bool haveItem = false;
@@ -173,10 +155,7 @@ void StatusBarQueue::showNext()
     {
         QMutexLocker lock(&m_mutex);
 
-        if (m_timer->isActive())
-        {
-            return;
-        }
+        if (m_timer->isActive()) { return; }
 
         if (!m_queue.isEmpty())
         {
@@ -185,10 +164,7 @@ void StatusBarQueue::showNext()
         }
     }
 
-    if (!haveItem)
-    {
-        return;
-    }
+    if (!haveItem) { return; }
 
     m_statusBar->showMessage(item.text, item.msec);
 

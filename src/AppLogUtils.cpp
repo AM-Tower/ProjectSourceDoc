@@ -5,7 +5,7 @@
  * @details     Implements psd::log helpers used by the UI and exporter.
  *
  * @authors     Jeffrey Scott Flesher with the help of AI: Copilot
- * @date        2026-03-26
+ * @date        2026-03-31
  *********************************************************************************************************************************/
 
 #include "AppLogUtils.h"
@@ -49,8 +49,7 @@ namespace psd::log
      *****************************************************************************************************************************/
     void logAppend(QTextEdit *output, const QString &text)
     {
-        if (!output)
-            return;
+        if (!output) return;
 
         output->moveCursor(QTextCursor::End);
         output->insertPlainText(text);

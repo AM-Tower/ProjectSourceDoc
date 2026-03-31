@@ -38,6 +38,7 @@ if(NOT DEFINED EXCLUDE_DIRS OR EXCLUDE_DIRS STREQUAL "")
     .qtcreator
     engines
     0-Archive
+    AppDir
   )
 endif()
 

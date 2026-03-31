@@ -163,16 +163,13 @@ If tree is not installed, generation still succeeds with a fallback message.
 ---
 ## Git
 
-    git add .
-    git commit -m "Updated features, and bugs."
-    git push
-    git push -u origin main
+    git add .; git commit -m "Updated features, and bugs."; git push; git push -u origin main;
 
 ---
 
 ## License
 
-Copyright 2026  
+Copyright 2026
 Jeffrey Scott Flesher
 
 This project is intended for personal, professional,
@@ -182,7 +179,7 @@ and AI-assisted development workflows.
 
 ## Author
 
-Jeffrey Scott Flesher  
+Jeffrey Scott Flesher
 Created with the assistance of Microsoft Copilot and iterative AI tooling.
 
 ---

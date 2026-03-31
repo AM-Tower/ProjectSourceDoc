@@ -10,7 +10,7 @@
  * functions do not attempt to discover or cache a “project root”.
  *
  * @authors     Jeffrey Scott Flesher with the help of AI: Copilot
- * @date        2026-03-26
+ * @date        2026-03-31
  *********************************************************************************************************************************/
 #pragma once
 

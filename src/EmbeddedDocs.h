@@ -3,7 +3,7 @@
  * @file EmbeddedDocs.h
  * @brief Embedded documentation helpers (README loading and Usage dialog).
  * @authors     Jeffrey Scott Flesher using AI: Copilot
- * @date        2026-03-26
+ * @date        2026-03-31
  *
  * @details
  * This header declares helper functions used to load and display embedded documentation bundled

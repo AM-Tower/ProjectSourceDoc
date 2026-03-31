@@ -8,7 +8,7 @@
  *              - bash single-quote escaping helper used by WSL command composition
  *
  * @authors     Jeffrey Scott Flesher with the help of AI: Copilot
- * @date        2026-03-26
+ * @date        2026-03-31
  *********************************************************************************************************************************/
 #pragma once
 
