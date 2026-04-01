@@ -171,6 +171,13 @@ declare -gx OS="linux";
 declare -gx CMAKE_GENERATOR="Ninja";
 
 #**************************************************************************************************
+# @brief        Versioning control flags and files.
+# @details      These variables control release-time version mutation. VERSION is the single authoritative source.
+#**************************************************************************************************
+declare -gx VERSION_FILE="VERSION"
+declare -gx VERSION_BACKUP_FILE=".VERSION.bak"
+
+#**************************************************************************************************
 # @section Color Definitions
 #**************************************************************************************************
 declare -gx BOLD='\033[1m';
@@ -192,10 +199,13 @@ declare -gx WHITE='\033[1;37m';     # Black background
 ################################################################################
 # @brief  Parse command-line arguments and set runtime flags.
 ################################################################################
-declare -gxi SWITCH_GIT_INIT=0     # --git-init
-declare -gxi SWITCH_TRACE=0;       # --trace:
-declare -gxi SWITCH_BACKUP=0;      # --backup:
-
+declare -gxi SWITCH_GIT_INIT=0      # --git-init
+declare -gxi SWITCH_TRACE=0;        # --trace:
+declare -gxi SWITCH_BACKUP=0;       # --backup:
+declare -gxi SWITCH_FINAL=0         # --final
+declare -gxi SWITCH_RESET=0         # --reset
+declare -gx  SWITCH_NEW_VERSION=""; # --version=X.Y.Z
+declare -gxi SWITCH_GITHUB=0;       # --github
 ################################################################################
 # @brief  Print a coloured PASS banner and append plain text to the log.
 # @param  $1  Test or step description string.
@@ -370,18 +380,118 @@ read_cmake_app_name()
 ################################################################################
 parse_args()
 {
-    # First pass: detect long options manually
     for arg in "$@"; do
         case "${arg}" in
-            --skip-tests)   SKIP_TESTS=1; ;;
-            --appdir-only)  run_mode=0; ;;
-            --git-init)     SWITCH_GIT_INIT=1; ;;
-            --backup)       SWITCH_BACKUP=1; ;;
-            --trace)        SWITCH_TRACE=1; ;;
-            --help)         usage ;;
-            *) echo "Unknown option: -${OPTARG}"; usage ;;
+            --final)       SWITCH_FINAL=1; ;;
+            --reset)       SWITCH_RESET=1; ;;
+            --version=*)   SWITCH_NEW_VERSION="${arg#*=}"; ;;
+            --github)      SWITCH_GITHUB=1; ;;
+            --skip-tests)  SKIP_TESTS=1; ;;
+            --appdir-only) run_mode=0; ;;
+            --git-init)    SWITCH_GIT_INIT=1; ;;
+            --backup)      SWITCH_BACKUP=1; ;;
+            --trace)       SWITCH_TRACE=1; ;;
+            --help)        usage; ;;
         esac
     done
+}
+
+################################################################################
+# @brief        Read the current project version from VERSION.
+# @return       Semantic version string (MAJOR.MINOR.PATCH).
+################################################################################
+read_version()
+{
+    [[ -f "${VERSION_FILE}" ]] || fail "VERSION file missing"
+    tr -d '[:space:]' < "${VERSION_FILE}"
+}
+
+################################################################################
+# @brief        Write a semantic version string to VERSION.
+# @param[in]    $1 New version string.
+################################################################################
+write_version()
+{
+    echo "$1" > "${VERSION_FILE}"
+}
+
+################################################################################
+# @brief        Increment PATCH version.
+# @param[in]    $1 Current semantic version.
+# @return       Incremented version.
+################################################################################
+increment_patch()
+{
+    local v="$1"
+    IFS='.' read -r major minor patch <<< "${v}"
+    echo "${major}.${minor}.$((patch + 1))"
+}
+
+################################################################################
+# @brief        Validate semantic version format.
+# @param[in]    $1 Version string.
+################################################################################
+validate_version()
+{
+    [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail "Invalid version format: $1"
+}
+
+#**********************************************************************************************************************
+# @brief Ensure a file exists, creating it with default content if missing.
+# @details Used for authoritative configuration files such as VERSION.
+#          The file is created only if it does not already exist.
+# @param  $1 File path to check or create.
+# @param  $2 Default content written if the file is created.
+# @return None.
+#**********************************************************************************************************************
+ensure_file_exists()
+{
+    local file="${1}";
+    local default_content="${2}";
+    if [[ -z "${file}" ]]; then fail "Error" "ensure_file_exists: file path is empty"; fi
+    if [[ ! -f "${file}" ]]; then
+        mkdir -p "$(dirname -- "${file}")";
+        printf "%s" "${default_content}" > "${file}";
+        info "Info" "Created file: ${file}";
+    fi
+    return 0;
+}
+
+################################################################################
+# @brief        Handle release-time version finalization.
+# @details      Applies version mutation ONLY when --final is supplied.
+################################################################################
+handle_versioning()
+{
+    ensure_file_exists "${VERSION_FILE}" "0.1.0";
+
+    if (( SWITCH_RESET == 1 )); then
+        [[ -f "${VERSION_BACKUP_FILE}" ]] || fail "No backup version to reset";
+        mv -f "${VERSION_BACKUP_FILE}" "${VERSION_FILE}";
+        info "Version reset to $(read_version)";
+        exit 0;
+    fi
+
+    if (( SWITCH_FINAL == 1 )); then
+        local current next;
+
+        current="$(read_version)";
+        cp "${VERSION_FILE}" "${VERSION_BACKUP_FILE}";
+
+        if [[ -n "${SWITCH_NEW_VERSION}" ]]; then
+            validate_version "${SWITCH_NEW_VERSION}";
+            next="${SWITCH_NEW_VERSION}";
+        else
+            next="$(increment_patch "${current}")";
+        fi
+
+        info "Finalizing release version: ${current} → ${next}";
+        write_version "${next}";
+    fi
+
+    # Always export APP_VERSION from VERSION
+    APP_VERSION="$(read_version)";
+    export APP_VERSION;
 }
 
 ################################################################################
@@ -2001,6 +2111,9 @@ install_appdata()
 ################################################################################
 main()
 {
+
+    # ── version handling MUST come first ───────────────────────────────────
+    handle_versioning;
     # ── bootstrap MUST be first ──────────────────────────────────────────────
     bootstrap_log "$@";
     parse_args "$@";

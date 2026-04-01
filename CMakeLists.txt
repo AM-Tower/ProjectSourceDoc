@@ -9,10 +9,7 @@
 
 cmake_minimum_required(VERSION 3.25)
 
-project(ProjectSourceDoc
-    VERSION 0.1.0
-    LANGUAGES CXX
-)
+project(ProjectSourceDoc VERSION 0.1.0 LANGUAGES CXX)
 
 # --------------------------------------------------------------------------------------------------
 # Disable TIFF support (avoids libtiff.so.5 dependency on Fedora)
