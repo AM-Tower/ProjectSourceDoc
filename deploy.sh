@@ -2116,8 +2116,6 @@ install_appdata()
 main()
 {
 
-    # ── version handling MUST come first ───────────────────────────────────
-    handle_versioning;
     # ── bootstrap MUST be first ──────────────────────────────────────────────
     bootstrap_log "$@";
     parse_args "$@";
@@ -2128,6 +2126,8 @@ main()
     if (( SWITCH_GIT_INIT == 1 )); then git_init; return 0; fi
     # 2. Check in git
     git_check || true;
+    # ── version handling MUST come first ───────────────────────────────────
+    handle_versioning;
     # 3. --backup: Backup before you check in case it fails
     if (( SWITCH_BACKUP == 1 )); then run_backup; return 0; fi
 
