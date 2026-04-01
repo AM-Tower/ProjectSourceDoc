@@ -288,6 +288,10 @@ usage()
     fi
     printf "%b --gitinit     Create a local git repo. Clean install deletes folder if exists  %b \n" "${CYAN}" "${NC}";
     printf "%b --trace       Show trace messages %b \n" "${CYAN}" "${NC}";
+    printf "%b --final       Increment Version %b \n" "${CYAN}" "${NC}";
+    printf "%b --reset       Reset Version %b \n" "${CYAN}" "${NC}";
+    printf "%b --version     Set Version: X.Y.Z %b \n" "${CYAN}" "${NC}";
+    printf "%b --github      Push GitHub %b \n" "${CYAN}" "${NC}";
     echo "";
     echo "  How to make executable and run:";
     echo "    chmod +x deploy.sh";
