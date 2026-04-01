@@ -15,6 +15,7 @@
 #include "MainWindow.h"
 
 #include <QAction>
+#include <QActionGroup>
 #include <QApplication>
 #include <QCryptographicHash>
 #include <QDir>
@@ -38,6 +39,8 @@
 #include <QTextEdit>
 #include <QToolBar>
 #include <QVBoxLayout>
+#include <QSignalBlocker>
+#include <QStyle>
 
 #include "AppLogUtils.h"
 #include "EmbeddedDocs.h"
@@ -60,16 +63,18 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 {
     setWindowTitle(tr("ProjectSource"));
     resize(1100, 700);
-
     psd::log::clearLogFilesAtStartup();
 
-    loadRecentProjects();
+    // Capture the platform default style name before we ever force Fusion.
+    m_platformStyleName = qApp->style()->objectName();
 
+    loadRecentProjects();
     createActions();
     createMenus();
     createToolbar();
     createTabs();
     createStatusBar();
+    restoreThemeMode();
 }
 
 /*!
@@ -229,6 +234,29 @@ void MainWindow::createMenus()
 
     QMenu *toolsMenu = menuBar()->addMenu(tr("&Tools"));
     toolsMenu->addAction(m_projectSourceAction);
+
+    /* ===================== Theme submenu ===================== */
+    QMenu *themeMenu = toolsMenu->addMenu(tr("Theme"));
+
+    m_themeGroup = new QActionGroup(this);
+    m_themeGroup->setExclusive(true);
+
+    m_themeSystemAction = themeMenu->addAction(tr("System"));
+    m_themeLightAction  = themeMenu->addAction(tr("Light"));
+    m_themeDarkAction   = themeMenu->addAction(tr("Dark"));
+
+    m_themeSystemAction->setCheckable(true);
+    m_themeLightAction->setCheckable(true);
+    m_themeDarkAction->setCheckable(true);
+
+    m_themeGroup->addAction(m_themeSystemAction);
+    m_themeGroup->addAction(m_themeLightAction);
+    m_themeGroup->addAction(m_themeDarkAction);
+
+    /* -------------------- Wiring -------------------- */
+    connect(m_themeSystemAction, &QAction::triggered, this, [this]() { applySystemTheme(); saveThemeMode(ThemeMode::System); });
+    connect(m_themeLightAction, &QAction::triggered, this, [this]()  { applyLightTheme(); saveThemeMode(ThemeMode::Light); });
+    connect(m_themeDarkAction, &QAction::triggered, this, [this]()   { applyDarkTheme(); saveThemeMode(ThemeMode::Dark); });
 
     QMenu *helpMenu = menuBar()->addMenu(tr("&Help"));
     helpMenu->addAction(m_usageAction);
@@ -951,6 +979,54 @@ void MainWindow::onProjectSourceTriggered()
     }
 
     showFileInLogTab(outPath, tr("Project‑Source.txt (%1)").arg(outPath));
+}
+
+/*!
+ * ********************************************************************************************************************************
+ * @brief Restore the persisted theme mode from settings.
+ *
+ * Defaults to system theme if no value is stored.
+ * *******************************************************************************************************************************/
+void MainWindow::restoreThemeMode()
+{
+    QSettings settings;
+    const int value = settings.value(kSettingsThemeMode, static_cast<int>(ThemeMode::System)).toInt();
+
+    const ThemeMode mode = static_cast<ThemeMode>(value);
+
+    switch (mode)
+    {
+        case ThemeMode::Light:
+            applyLightTheme();
+            break;
+        case ThemeMode::Dark:
+            applyDarkTheme();
+            break;
+        case ThemeMode::System:
+        default:
+            applySystemTheme();
+            break;
+    }
+    // ✅ Make the menu reflect what we actually applied.
+    updateThemeMenuChecks(mode);
+}
+
+/*!
+ * ****************************************************************************************************************************
+ * @brief Update the Theme menu checkmarks to match the specified theme mode.
+ * @param mode Theme mode that should appear selected in the menu.
+ *****************************************************************************************************************************/
+void MainWindow::updateThemeMenuChecks(ThemeMode mode)
+{
+    if (!m_themeSystemAction || !m_themeLightAction || !m_themeDarkAction) return;
+
+    const QSignalBlocker b1(m_themeSystemAction);
+    const QSignalBlocker b2(m_themeLightAction);
+    const QSignalBlocker b3(m_themeDarkAction);
+
+    m_themeSystemAction->setChecked(mode == ThemeMode::System);
+    m_themeLightAction->setChecked(mode == ThemeMode::Light);
+    m_themeDarkAction->setChecked(mode == ThemeMode::Dark);
 }
 
 /*!

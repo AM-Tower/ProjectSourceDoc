@@ -2,7 +2,8 @@
  * ********************************************************************************************************************************
  * @file         MainWindow.h
  * @brief        Declares the main application window for ProjectSource.
- * @details      MainWindow owns and orchestrates the entire Qt Widgets UI for the ProjectSource application.
+ * @details      MainWindow owns and orchestrates the entire Qt Widgets UI for the ProjectSource
+ * application.
  *
  *               Responsibilities include:
  *               - File menu (Open project, Open Recent, Exit)
@@ -16,8 +17,8 @@
  *               - Exclude folder patterns with browse support
  *               - Backup base folder selection with timestamped backups
  *
- *               All per‑project settings are persisted using QSettings and applied when generating Project‑Source.txt
- *               and performing project backups.
+ *               All per‑project settings are persisted using QSettings and applied when generating
+ * Project‑Source.txt and performing project backups.
  *
  * @author       Jeffrey Scott Flesher
  * @date         2026-03-31
@@ -39,14 +40,29 @@ class QTabWidget;
 class QTextEdit;
 class QToolBar;
 class StatusBarQueue;
+class QActionGroup;
+
+
+static constexpr const char *kSettingsThemeMode = "ui/themeMode";
+
+/*!
+ * ********************************************************************************************************************************
+ * @brief  Theme Mode
+ *********************************************************************************************************************************/
+enum class ThemeMode
+{
+    System,
+    Light,
+    Dark
+};
 
 /*!
  * ********************************************************************************************************************************
  * @class        MainWindow
  * @brief        Primary GUI window for the ProjectSource application.
  *
- * @details      MainWindow is responsible for all user‑facing interactions and delegates project source generation and backup
- *               logic to ProjectSourceExporter.
+ * @details      MainWindow is responsible for all user‑facing interactions and delegates project
+ * source generation and backup logic to ProjectSourceExporter.
  *
  *               This class owns:
  *               - Application menus and toolbar
@@ -135,87 +151,145 @@ class MainWindow final : public QMainWindow
     private:
         /* --------------------------- Core UI --------------------------- */
 
-               //! Create all QAction instances.
+        //! Create all QAction instances.
         void createActions();
 
-               //! Create all application menus.
+        //! Create all application menus.
         void createMenus();
 
-               //! Create the main toolbar.
+        //! Create the main toolbar.
         void createToolbar();
 
-               //! Create the main tab widget (Log + Settings).
+        //! Create the main tab widget (Log + Settings).
         void createTabs();
 
-               //! Create the status bar and progress UI.
+        //! Create the status bar and progress UI.
         void createStatusBar();
 
-               //! Begin resetting the log view.
+        //! Begin resetting the log view.
         void beginLogReset();
 
-               //! Append text to the log view.
+        //! Append text to the log view.
         void appendToLog(const QString &text);
 
-               //! Display a file inside the log tab with a header.
+        //! Display a file inside the log tab with a header.
         void showFileInLogTab(const QString &path, const QString &header);
 
-               //! Return a themed icon based on the current UI theme.
+        //! Return a themed icon based on the current UI theme.
         QIcon themedIcon(const QString &baseName) const;
 
-               //! Open a project folder and optionally show CMakeLists.txt.
+        //! Open a project folder and optionally show CMakeLists.txt.
         bool openProjectFolder(const QString &folderPath, bool showCMakeIfPresent);
 
-               //! Load recent projects from persistent storage.
+        //! Load recent projects from persistent storage.
         void loadRecentProjects();
 
-               //! Save recent projects to persistent storage.
+        //! Save recent projects to persistent storage.
         void saveRecentProjects() const;
 
-               //! Add a project to the recent list.
+        //! Add a project to the recent list.
         void addRecentProject(const QString &folderPath);
 
-               //! Rebuild the recent projects menu.
+        //! Rebuild the recent projects menu.
         void rebuildRecentProjectsMenu();
 
-               //! Refresh UI elements after theme changes.
+        //! Refresh UI elements after theme changes.
         void refreshThemeUi();
+
+        /*!
+         * ****************************************************************************************************************************
+         * @brief Apply the system (default) theme.
+         *
+         * Clears any application-level palette or stylesheet overrides and restores the
+         * platform’s default style and palette. When selected, the application follows
+         * the operating system’s appearance (light/dark) automatically.
+         *
+         * This function triggers a palette change, which causes theme-aware icons and UI
+         * elements to refresh via existing event handlers.
+         *****************************************************************************************************************************/
+        void applySystemTheme();
+
+        /*!
+         * ****************************************************************************************************************************
+         * @brief Apply a forced light theme.
+         *
+         * Applies a light application palette suitable for bright UI environments.
+         * This overrides the system theme until changed by the user.
+         *
+         * Theme-aware icons and widgets are refreshed automatically through palette
+         * change events.
+         *****************************************************************************************************************************/
+        void applyLightTheme();
+
+        /*!
+         * ****************************************************************************************************************************
+         * @brief Apply a forced dark theme.
+         *
+         * Applies a dark application palette designed for low-light environments.
+         * This overrides the system theme until changed by the user.
+         *
+         * Theme-aware icons and widgets are refreshed automatically through palette
+         * change events.
+         *****************************************************************************************************************************/
+        void applyDarkTheme();
+
+        /*!
+         * ****************************************************************************************************************************
+         * @brief Save the selected theme mode to persistent settings.
+         * @param mode Selected theme mode.
+         *****************************************************************************************************************************/
+        void saveThemeMode(ThemeMode mode);
+
+        /*!
+         * ********************************************************************************************************************************
+         * @brief Restore the persisted theme mode from settings.
+         *          * Defaults to system theme if no value is stored.
+         * *******************************************************************************************************************************/
+        void restoreThemeMode();
+
+        /*!
+         * ****************************************************************************************************************************
+         * @brief Update the Theme menu checkmarks to match the specified theme mode.
+         * @param mode Theme mode that should appear selected in the menu.
+         *****************************************************************************************************************************/
+        void updateThemeMenuChecks(ThemeMode mode);
 
         /* --------------------------- Settings Tab --------------------------- */
 
-               //! Create the settings tab UI.
+        //! Create the settings tab UI.
         void createSettingsTab();
 
-               //! Load project folders into the settings tab.
+        //! Load project folders into the settings tab.
         void loadProjectFoldersForSettingsTab();
 
-               //! Save project folders from the settings tab.
+        //! Save project folders from the settings tab.
         void saveProjectFoldersFromSettingsTab() const;
 
-               //! Load settings for a specific project.
+        //! Load settings for a specific project.
         void loadSettingsForProject(const QString &projectRoot);
 
-               //! Save settings for a specific project.
+        //! Save settings for a specific project.
         void saveSettingsForProject(const QString &projectRoot) const;
 
-               //! Return the currently selected project in the settings tab.
+        //! Return the currently selected project in the settings tab.
         QString currentSettingsProject() const;
 
-               //! Enable or disable the settings panel.
+        //! Enable or disable the settings panel.
         void setSettingsPanelEnabled(bool enabled);
 
-               //! Compute a stable project ID from an absolute path.
+        //! Compute a stable project ID from an absolute path.
         static QString projectIdForPath(const QString &absPath);
 
-               //! Normalize an extension string.
+        //! Normalize an extension string.
         static QString normalizeExt(const QString &ext);
 
-               //! Parse extension text into a QStringList.
+        //! Parse extension text into a QStringList.
         static QStringList parseExtensionsText(const QString &text);
 
-               //! Default include extensions.
+        //! Default include extensions.
         static QStringList defaultIncludeExts();
 
-               //! Default excluded directories.
+        //! Default excluded directories.
         static QStringList defaultExcludeDirs();
 
         /*!
@@ -236,13 +310,50 @@ class MainWindow final : public QMainWindow
         QString m_openProjectRoot;
         QString m_currentLogFilePath;
 
-        QAction  *m_openAction{nullptr};
-        QAction  *m_projectSourceAction{nullptr};
-        QAction  *m_exitAction{nullptr};
-        QAction  *m_usageAction{nullptr};
-        QAction  *m_aboutAction{nullptr};
-        QAction  *m_clearRecentAction{nullptr};
-        QMenu    *m_recentMenu{nullptr};
+        QAction *m_openAction{nullptr};
+        QAction *m_projectSourceAction{nullptr};
+        QAction *m_exitAction{nullptr};
+        QAction *m_usageAction{nullptr};
+        QAction *m_aboutAction{nullptr};
+        QAction *m_clearRecentAction{nullptr};
+
+        /*!
+         * ****************************************************************************************************************************
+         * @brief Action to follow the system theme.
+         *
+         * When selected, clears all application palette overrides and allows the
+         * operating system to control the application’s appearance.
+         *****************************************************************************************************************************/
+        QAction *m_themeSystemAction{nullptr};
+
+        /*!
+         * ****************************************************************************************************************************
+         * @brief Action to force a light theme.
+         *
+         * Applies a light palette regardless of system appearance.
+         *****************************************************************************************************************************/
+        QAction *m_themeLightAction{nullptr};
+
+        /*!
+         * ****************************************************************************************************************************
+         * @brief Action to force a dark theme.
+         *
+         * Applies a dark palette regardless of system appearance.
+         *****************************************************************************************************************************/
+        QAction *m_themeDarkAction{nullptr};
+
+        /*!
+         * ****************************************************************************************************************************
+         * @brief Exclusive action group for theme selection.
+         *
+         * Ensures that only one theme option (System, Light, or Dark) can be active
+         * at a time in the Tools → Theme menu.
+         *****************************************************************************************************************************/
+        QActionGroup *m_themeGroup{nullptr};
+
+        QString m_platformStyleName;
+
+        QMenu *m_recentMenu{nullptr};
         QToolBar *m_toolbar{nullptr};
 
         QStringList m_recentProjects;
