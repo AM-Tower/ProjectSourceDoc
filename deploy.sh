@@ -2122,13 +2122,13 @@ main()
     print_banner;
     # Load Source
     if ! load_library_source; then return 1; fi
-    # 1. --gitinit: Create a new local git repo
+    # --gitinit: Create a new local git repo
     if (( SWITCH_GIT_INIT == 1 )); then git_init; return 0; fi
-    # 2. Check in git
-    git_check || true;
     # ── version handling MUST come first ───────────────────────────────────
     handle_versioning;
-    # 3. --backup: Backup before you check in case it fails
+    # Check in git
+    git_check || true;
+    # --backup: Backup before you check in case it fails
     if (( SWITCH_BACKUP == 1 )); then run_backup; return 0; fi
 
     # ── sanity check ─────────────────────────────────────────────────────────
