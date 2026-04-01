@@ -41,7 +41,7 @@ set(CMAKE_AUTORCC ON)
 # --------------------------------------------------------------------------------------------------
 # Qt dependencies
 # --------------------------------------------------------------------------------------------------
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets LinguistTools)
 find_package(Qt6 OPTIONAL_COMPONENTS Svg Concurrent)
 
 qt_standard_project_setup()
@@ -78,6 +78,13 @@ set(APP_QRC
 )
 
 # --------------------------------------------------------------------------------------------------
+# Translations (multi-language)
+# --------------------------------------------------------------------------------------------------
+file(GLOB APP_TRANSLATIONS CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/i18n/ProjectSourceDoc_*.ts"
+)
+
+# --------------------------------------------------------------------------------------------------
 # Main application target
 # --------------------------------------------------------------------------------------------------
 qt_add_executable(ProjectSourceDoc
@@ -90,8 +97,19 @@ qt_add_executable(ProjectSourceDoc
 )
 
 # --------------------------------------------------------------------------------------------------
+# Generate and embed translations (Qt 6 – resource-based, correct usage)
+# --------------------------------------------------------------------------------------------------
+if(APP_TRANSLATIONS)
+    qt6_add_translations(ProjectSourceDoc
+        TS_FILES ${APP_TRANSLATIONS}
+        RESOURCE_PREFIX "/i18n"
+    )
+else()
+    message(STATUS "No translation files found (i18n/ProjectSourceDoc_*.ts)")
+endif()
+
+# --------------------------------------------------------------------------------------------------
 # Qt plugin selection
-# Exclude TIFF image plugin to avoid libtiff dependency
 # --------------------------------------------------------------------------------------------------
 qt_import_plugins(ProjectSourceDoc
     EXCLUDE Qt::QTiffPlugin
@@ -122,19 +140,16 @@ if(TARGET Qt6::Concurrent)
 endif()
 
 # --------------------------------------------------------------------------------------------------
-# Unit Tests (Qt Test)
+# Unit Tests
 # --------------------------------------------------------------------------------------------------
 option(BUILD_TESTS "Build ProjectSourceDoc unit tests" ON)
 
 if(BUILD_TESTS)
     enable_testing()
-
     find_package(Qt6 REQUIRED COMPONENTS Test)
 
     add_executable(ProjectSourceDocTests
         tests/ProjectSourceDocTests.cpp
-
-        # Reuse production sources (exclude main.cpp to avoid duplicate main)
         src/MainWindow.cpp
         src/MainWindowTheme.cpp
         src/StatusBarQueue.cpp
@@ -142,8 +157,6 @@ if(BUILD_TESTS)
         src/ProjectPaths.cpp
         src/EmbeddedDocs.cpp
         src/ProjectSourceExporter.cpp
-
-        # Resources (some code paths rely on them)
         resources/ProjectSourceDoc.qrc
     )
 
@@ -175,10 +188,6 @@ endif()
 
 # --------------------------------------------------------------------------------------------------
 # Install + Packaging
-# NOTE:
-#  - The application CREATES its own .desktop file at runtime.
-#  - Therefore, NO .desktop file is installed by CMake.
-#  - deploy.sh / AppImage handles desktop integration.
 # --------------------------------------------------------------------------------------------------
 include(GNUInstallDirs)
 
@@ -187,19 +196,17 @@ install(TARGETS ProjectSourceDoc
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
-# Install CMake helper files (used by the app and tooling)
 install(DIRECTORY cmake/
     DESTINATION share/${PROJECT_NAME}/cmake
 )
 
-# Install the SVG icon (used by AppImage + desktop integration)
 install(FILES resources/icons/light/app.svg
     DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/scalable/apps
     RENAME ProjectSourceDoc.svg
 )
 
 # --------------------------------------------------------------------------------------------------
-# CPack (optional, not used by AppImage but kept for future packaging)
+# CPack
 # --------------------------------------------------------------------------------------------------
 include(InstallRequiredSystemLibraries)
 
@@ -218,12 +225,8 @@ endif()
 include(CPack)
 
 # --------------------------------------------------------------------------------------------------
-# AppImage Packaging (Linux only)
+# AppImage Packaging
 # --------------------------------------------------------------------------------------------------
 if(UNIX AND NOT APPLE)
     message(STATUS "AppImage packaging is handled externally by deploy.sh")
 endif()
-
-# --------------------------------------------------------------------------------------------------
-# End of CMakeLists.txt
-# --------------------------------------------------------------------------------------------------

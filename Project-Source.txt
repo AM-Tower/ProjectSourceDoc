@@ -122,7 +122,7 @@ set(CMAKE_AUTORCC ON)
 # --------------------------------------------------------------------------------------------------
 # Qt dependencies
 # --------------------------------------------------------------------------------------------------
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets LinguistTools)
 find_package(Qt6 OPTIONAL_COMPONENTS Svg Concurrent)
 
 qt_standard_project_setup()
@@ -159,6 +159,13 @@ set(APP_QRC
 )
 
 # --------------------------------------------------------------------------------------------------
+# Translations (multi-language)
+# --------------------------------------------------------------------------------------------------
+file(GLOB APP_TRANSLATIONS CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/i18n/ProjectSourceDoc_*.ts"
+)
+
+# --------------------------------------------------------------------------------------------------
 # Main application target
 # --------------------------------------------------------------------------------------------------
 qt_add_executable(ProjectSourceDoc
@@ -171,8 +178,19 @@ qt_add_executable(ProjectSourceDoc
 )
 
 # --------------------------------------------------------------------------------------------------
+# Generate and embed translations (Qt 6 – resource-based, correct usage)
+# --------------------------------------------------------------------------------------------------
+if(APP_TRANSLATIONS)
+    qt6_add_translations(ProjectSourceDoc
+        TS_FILES ${APP_TRANSLATIONS}
+        RESOURCE_PREFIX "/i18n"
+    )
+else()
+    message(STATUS "No translation files found (i18n/ProjectSourceDoc_*.ts)")
+endif()
+
+# --------------------------------------------------------------------------------------------------
 # Qt plugin selection
-# Exclude TIFF image plugin to avoid libtiff dependency
 # --------------------------------------------------------------------------------------------------
 qt_import_plugins(ProjectSourceDoc
     EXCLUDE Qt::QTiffPlugin
@@ -203,19 +221,16 @@ if(TARGET Qt6::Concurrent)
 endif()
 
 # --------------------------------------------------------------------------------------------------
-# Unit Tests (Qt Test)
+# Unit Tests
 # --------------------------------------------------------------------------------------------------
 option(BUILD_TESTS "Build ProjectSourceDoc unit tests" ON)
 
 if(BUILD_TESTS)
     enable_testing()
-
     find_package(Qt6 REQUIRED COMPONENTS Test)
 
     add_executable(ProjectSourceDocTests
         tests/ProjectSourceDocTests.cpp
-
-        # Reuse production sources (exclude main.cpp to avoid duplicate main)
         src/MainWindow.cpp
         src/MainWindowTheme.cpp
         src/StatusBarQueue.cpp
@@ -223,8 +238,6 @@ if(BUILD_TESTS)
         src/ProjectPaths.cpp
         src/EmbeddedDocs.cpp
         src/ProjectSourceExporter.cpp
-
-        # Resources (some code paths rely on them)
         resources/ProjectSourceDoc.qrc
     )
 
@@ -256,10 +269,6 @@ endif()
 
 # --------------------------------------------------------------------------------------------------
 # Install + Packaging
-# NOTE:
-#  - The application CREATES its own .desktop file at runtime.
-#  - Therefore, NO .desktop file is installed by CMake.
-#  - deploy.sh / AppImage handles desktop integration.
 # --------------------------------------------------------------------------------------------------
 include(GNUInstallDirs)
 
@@ -268,19 +277,17 @@ install(TARGETS ProjectSourceDoc
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
-# Install CMake helper files (used by the app and tooling)
 install(DIRECTORY cmake/
     DESTINATION share/${PROJECT_NAME}/cmake
 )
 
-# Install the SVG icon (used by AppImage + desktop integration)
 install(FILES resources/icons/light/app.svg
     DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/scalable/apps
     RENAME ProjectSourceDoc.svg
 )
 
 # --------------------------------------------------------------------------------------------------
-# CPack (optional, not used by AppImage but kept for future packaging)
+# CPack
 # --------------------------------------------------------------------------------------------------
 include(InstallRequiredSystemLibraries)
 
@@ -299,15 +306,11 @@ endif()
 include(CPack)
 
 # --------------------------------------------------------------------------------------------------
-# AppImage Packaging (Linux only)
+# AppImage Packaging
 # --------------------------------------------------------------------------------------------------
 if(UNIX AND NOT APPLE)
     message(STATUS "AppImage packaging is handled externally by deploy.sh")
 endif()
-
-# --------------------------------------------------------------------------------------------------
-# End of CMakeLists.txt
-# --------------------------------------------------------------------------------------------------
 
 ===================================================================================================================================
 =============================== FILE: AI.md ===============================
@@ -595,8 +598,10 @@ If tree is not installed, generation still succeeds with a fallback message.
 
 ---
 ## Git
-
+Update all:
     git add .; git commit -m "Updated features, and bugs."; git push; git push -u origin main;
+One time:
+    git add VERSION; git commit -m "Add VERSION file"; git push origin main
 
 ---
 
@@ -981,6 +986,8 @@ namespace psd::docs
 #include <QTextEdit>
 #include <QToolBar>
 #include <QVBoxLayout>
+#include <QSignalBlocker>
+#include <QStyle>
 
 #include "AppLogUtils.h"
 #include "EmbeddedDocs.h"
@@ -1003,16 +1010,18 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 {
     setWindowTitle(tr("ProjectSource"));
     resize(1100, 700);
-
     psd::log::clearLogFilesAtStartup();
 
-    loadRecentProjects();
+    // Capture the platform default style name before we ever force Fusion.
+    m_platformStyleName = qApp->style()->objectName();
 
+    loadRecentProjects();
     createActions();
     createMenus();
     createToolbar();
     createTabs();
     createStatusBar();
+    restoreThemeMode();
 }
 
 /*!
@@ -1191,13 +1200,10 @@ void MainWindow::createMenus()
     m_themeGroup->addAction(m_themeLightAction);
     m_themeGroup->addAction(m_themeDarkAction);
 
-    m_themeSystemAction->setChecked(true);
-
     /* -------------------- Wiring -------------------- */
-    connect(m_themeSystemAction, &QAction::triggered, this, &MainWindow::applySystemTheme);
-    connect(m_themeLightAction,  &QAction::triggered, this, &MainWindow::applyLightTheme);
-    connect(m_themeDarkAction,   &QAction::triggered, this, &MainWindow::applyDarkTheme);
-
+    connect(m_themeSystemAction, &QAction::triggered, this, [this]() { applySystemTheme(); saveThemeMode(ThemeMode::System); });
+    connect(m_themeLightAction, &QAction::triggered, this, [this]()  { applyLightTheme(); saveThemeMode(ThemeMode::Light); });
+    connect(m_themeDarkAction, &QAction::triggered, this, [this]()   { applyDarkTheme(); saveThemeMode(ThemeMode::Dark); });
 
     QMenu *helpMenu = menuBar()->addMenu(tr("&Help"));
     helpMenu->addAction(m_usageAction);
@@ -1924,6 +1930,54 @@ void MainWindow::onProjectSourceTriggered()
 
 /*!
  * ********************************************************************************************************************************
+ * @brief Restore the persisted theme mode from settings.
+ *
+ * Defaults to system theme if no value is stored.
+ * *******************************************************************************************************************************/
+void MainWindow::restoreThemeMode()
+{
+    QSettings settings;
+    const int value = settings.value(kSettingsThemeMode, static_cast<int>(ThemeMode::System)).toInt();
+
+    const ThemeMode mode = static_cast<ThemeMode>(value);
+
+    switch (mode)
+    {
+        case ThemeMode::Light:
+            applyLightTheme();
+            break;
+        case ThemeMode::Dark:
+            applyDarkTheme();
+            break;
+        case ThemeMode::System:
+        default:
+            applySystemTheme();
+            break;
+    }
+    // ✅ Make the menu reflect what we actually applied.
+    updateThemeMenuChecks(mode);
+}
+
+/*!
+ * ****************************************************************************************************************************
+ * @brief Update the Theme menu checkmarks to match the specified theme mode.
+ * @param mode Theme mode that should appear selected in the menu.
+ *****************************************************************************************************************************/
+void MainWindow::updateThemeMenuChecks(ThemeMode mode)
+{
+    if (!m_themeSystemAction || !m_themeLightAction || !m_themeDarkAction) return;
+
+    const QSignalBlocker b1(m_themeSystemAction);
+    const QSignalBlocker b2(m_themeLightAction);
+    const QSignalBlocker b3(m_themeDarkAction);
+
+    m_themeSystemAction->setChecked(mode == ThemeMode::System);
+    m_themeLightAction->setChecked(mode == ThemeMode::Light);
+    m_themeDarkAction->setChecked(mode == ThemeMode::Dark);
+}
+
+/*!
+ * ********************************************************************************************************************************
  * @file         MainWindow.cpp
  * @brief        End of MainWindow.cpp.
  *********************************************************************************************************************************/
@@ -1975,6 +2029,20 @@ class QTextEdit;
 class QToolBar;
 class StatusBarQueue;
 class QActionGroup;
+
+
+static constexpr const char *kSettingsThemeMode = "ui/themeMode";
+
+/*!
+ * ********************************************************************************************************************************
+ * @brief  Theme Mode
+ *********************************************************************************************************************************/
+enum class ThemeMode
+{
+    System,
+    Light,
+    Dark
+};
 
 /*!
  * ********************************************************************************************************************************
@@ -2153,6 +2221,27 @@ class MainWindow final : public QMainWindow
          *****************************************************************************************************************************/
         void applyDarkTheme();
 
+        /*!
+         * ****************************************************************************************************************************
+         * @brief Save the selected theme mode to persistent settings.
+         * @param mode Selected theme mode.
+         *****************************************************************************************************************************/
+        void saveThemeMode(ThemeMode mode);
+
+        /*!
+         * ********************************************************************************************************************************
+         * @brief Restore the persisted theme mode from settings.
+         *          * Defaults to system theme if no value is stored.
+         * *******************************************************************************************************************************/
+        void restoreThemeMode();
+
+        /*!
+         * ****************************************************************************************************************************
+         * @brief Update the Theme menu checkmarks to match the specified theme mode.
+         * @param mode Theme mode that should appear selected in the menu.
+         *****************************************************************************************************************************/
+        void updateThemeMenuChecks(ThemeMode mode);
+
         /* --------------------------- Settings Tab --------------------------- */
 
         //! Create the settings tab UI.
@@ -2200,11 +2289,11 @@ class MainWindow final : public QMainWindow
 
     private:
         /* --------------------------- Core Members --------------------------- */
-        QTabWidget *m_tabs{nullptr};
+        QTabWidget     *m_tabs{nullptr};
         StatusBarQueue *m_statusQueue{nullptr};
-        QTextEdit *m_logView{nullptr};
-        QProgressBar *m_logProgress{nullptr};
-        bool m_logResetPending{false};
+        QTextEdit      *m_logView{nullptr};
+        QProgressBar   *m_logProgress{nullptr};
+        bool            m_logResetPending{false};
 
         QString m_openProjectRoot;
         QString m_currentLogFilePath;
@@ -2250,23 +2339,25 @@ class MainWindow final : public QMainWindow
          *****************************************************************************************************************************/
         QActionGroup *m_themeGroup{nullptr};
 
+        QString m_platformStyleName;
+
         QMenu *m_recentMenu{nullptr};
         QToolBar *m_toolbar{nullptr};
 
         QStringList m_recentProjects;
 
         /* --------------------------- Settings Tab Widgets --------------------------- */
-        QWidget *m_settingsTab{nullptr};
+        QWidget     *m_settingsTab{nullptr};
         QListWidget *m_projectFoldersList{nullptr};
         QPushButton *m_addProjectFolderBtn{nullptr};
         QPushButton *m_removeProjectFolderBtn{nullptr};
 
-        QLineEdit *m_includeExtEdit{nullptr};
+        QLineEdit   *m_includeExtEdit{nullptr};
         QListWidget *m_excludeFoldersList{nullptr};
         QPushButton *m_addExcludeBrowseBtn{nullptr};
         QPushButton *m_removeExcludeBtn{nullptr};
 
-        QLineEdit *m_backupFolderEdit{nullptr};
+        QLineEdit   *m_backupFolderEdit{nullptr};
         QPushButton *m_backupBrowseBtn{nullptr};
 
         QString m_settingsSelectedProject;
@@ -2300,6 +2391,9 @@ class MainWindow final : public QMainWindow
 #include <QTabWidget>
 #include <QStyle>
 #include <QStyleFactory>
+#include <QSettings>
+#include <QStatusBar>
+#include <QColor>
 
 /*!
  * ********************************************************************************************************************************
@@ -2375,6 +2469,11 @@ void MainWindow::changeEvent(QEvent *event)
 void MainWindow::applySystemTheme()
 {
     qApp->setStyleSheet(QString());
+    // Restore original platform style if we previously forced Fusion.
+    if (!m_platformStyleName.isEmpty())
+    {
+        if (QStyle *s = QStyleFactory::create(m_platformStyleName)) qApp->setStyle(s);
+    }
     qApp->setPalette(qApp->style()->standardPalette());
 }
 
@@ -2390,6 +2489,8 @@ void MainWindow::applySystemTheme()
  *****************************************************************************************************************************/
 void MainWindow::applyLightTheme()
 {
+    qApp->setStyle(QStyleFactory::create("Fusion"));
+
     QPalette p;
     p.setColor(QPalette::Window, QColor(245, 245, 245));
     p.setColor(QPalette::WindowText, Qt::black);
@@ -2397,11 +2498,12 @@ void MainWindow::applyLightTheme()
     p.setColor(QPalette::Text, Qt::black);
     p.setColor(QPalette::Button, QColor(240, 240, 240));
     p.setColor(QPalette::ButtonText, Qt::black);
+
     qApp->setPalette(p);
 }
 
 /*!
- * ****************************************************************************************************************************
+ * ********************************************************************************************************************************
  * @brief Apply a forced dark theme.
  *
  * Applies a dark application palette designed for low-light environments.
@@ -2409,9 +2511,11 @@ void MainWindow::applyLightTheme()
  *
  * Theme-aware icons and widgets are refreshed automatically through palette
  * change events.
- *****************************************************************************************************************************/
+ ***********************************************************************************************************************************/
 void MainWindow::applyDarkTheme()
 {
+    qApp->setStyle(QStyleFactory::create("Fusion"));
+
     QPalette p;
     p.setColor(QPalette::Window, QColor(32, 32, 32));
     p.setColor(QPalette::WindowText, Qt::white);
@@ -2419,7 +2523,19 @@ void MainWindow::applyDarkTheme()
     p.setColor(QPalette::Text, Qt::white);
     p.setColor(QPalette::Button, QColor(45, 45, 45));
     p.setColor(QPalette::ButtonText, Qt::white);
+
     qApp->setPalette(p);
+}
+
+/*!
+ * ********************************************************************************************************************************
+ * @brief Save the selected theme mode to persistent settings.
+ * @param mode Selected theme mode.
+ ***********************************************************************************************************************************/
+void MainWindow::saveThemeMode(ThemeMode mode)
+{
+    QSettings settings;
+    settings.setValue(kSettingsThemeMode, static_cast<int>(mode));
 }
 
 /*!

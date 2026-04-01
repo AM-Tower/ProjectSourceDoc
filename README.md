@@ -162,8 +162,10 @@ If tree is not installed, generation still succeeds with a fallback message.
 
 ---
 ## Git
-
+Update all:
     git add .; git commit -m "Updated features, and bugs."; git push; git push -u origin main;
+One time:
+    git add VERSION; git commit -m "Add VERSION file"; git push origin main
 
 ---
 
