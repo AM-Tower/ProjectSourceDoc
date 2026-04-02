@@ -39,6 +39,7 @@
 #include <utility> // for std::as_const
 
 #include "ProjectPaths.h"
+#include "ProjectSourceGenerator.h"
 
 namespace
 {
@@ -295,13 +296,14 @@ QString ProjectSourceExporter::backupProjectToTimestampedFolder(QWidget *parent,
     return destFolder;
 }
 
-/*! ******************************************************************************************************************************
+/*!
+ * ******************************************************************************************************************************
  * @brief       Generates Project‑Source.txt and returns the output path (defaults enforced + .gitignore).
  * @details     Single public entry point:
  *              - Applies default include extensions and default excluded directory patterns
  *              - Merges user settings (if present)
  *              - Merges selected project's .gitignore directory rules (always)
- *              - Invokes cmake/PackSource.cmake
+ *              - Invokes ProjectSourceGenerator (CMake fully removed)
  *              - Validates output file exists
  *              - Creates a timestamped backup using the same exclusion rules
  *
@@ -312,7 +314,7 @@ QString ProjectSourceExporter::backupProjectToTimestampedFolder(QWidget *parent,
  *
  * @return      Absolute path to Project‑Source.txt on success; empty string on failure.
  ******************************************************************************************************************************* */
-QString ProjectSourceExporter::generateAndReturnPath(QWidget* parent, QStatusBar* status, const QString& projectRoot, QString* outProcessLog)
+QString ProjectSourceExporter::generateAndReturnPath(QWidget *parent, QStatusBar *status, const QString &projectRoot, QString *outProcessLog)
 {
     appendDebug(projectRoot, "=== generateAndReturnPath ENTER ===");
     appendDebug(projectRoot, QString("projectRoot=%1").arg(projectRoot));
@@ -332,7 +334,6 @@ QString ProjectSourceExporter::generateAndReturnPath(QWidget* parent, QStatusBar
     QString log;
     postStatus(status, QObject::tr("Generating Project‑Source.txt..."));
 
-    // Defaults
     QStringList includeExts = defaultIncludeExtensions();
     QStringList settingsInclude;
     QStringList settingsExclude;
@@ -341,107 +342,36 @@ QString ProjectSourceExporter::generateAndReturnPath(QWidget* parent, QStatusBar
     appendDebug(projectRoot, "Loading project settings");
     loadProjectSettings(projectRoot, settingsInclude, settingsExclude, backupBase);
 
-    appendDebug(projectRoot, QString("settingsInclude=%1").arg(settingsInclude.join(',')));
-    appendDebug(projectRoot, QString("settingsExclude=%1").arg(settingsExclude.join(',')));
-    appendDebug(projectRoot, QString("backupBase=%1").arg(backupBase));
-
     if (!settingsInclude.isEmpty()) includeExts = settingsInclude;
 
-    appendDebug(projectRoot, QString("effective includeExts=%1").arg(includeExts.join(',')));
-
-    // Deterministic merge: defaults + user excludes + .gitignore
     QStringList effectiveExcludeDirs = defaultExcludeDirs();
 
-    for (const QString& d : std::as_const(settingsExclude))
+    for (int i = 0; i < settingsExclude.size(); ++i)
     {
-        const QString v = d.trimmed();
+        const QString v = settingsExclude.at(i).trimmed();
         if (!v.isEmpty() && !effectiveExcludeDirs.contains(v)) effectiveExcludeDirs.append(v);
     }
 
     const QStringList gitignoreDirs = excludeDirsFromGitignore(projectRoot);
-    for (const QString& d : std::as_const(gitignoreDirs))
+    for (int i = 0; i < gitignoreDirs.size(); ++i)
     {
-        const QString v = d.trimmed();
+        const QString v = gitignoreDirs.at(i).trimmed();
         if (!v.isEmpty() && !effectiveExcludeDirs.contains(v)) effectiveExcludeDirs.append(v);
-    }
-
-    appendDebug(projectRoot, QString("effectiveExcludeDirs=%1").arg(effectiveExcludeDirs.join(',')));
-
-    // MUST be a real project root
-    const QString cmakeListsPath = QDir(projectRoot).filePath(QStringLiteral("CMakeLists.txt"));
-
-    appendDebug(projectRoot, QString("CMakeLists.txt=%1 exists=%2").arg(cmakeListsPath).arg(QFileInfo::exists(cmakeListsPath)));
-
-    if (!QFileInfo::exists(cmakeListsPath))
-    {
-        log += QObject::tr("ERROR: Selected project has no CMakeLists.txt:\n%1\n").arg(projectRoot);
-        if (outProcessLog) *outProcessLog = log;
-        appendDebug(projectRoot, "ERROR: Missing CMakeLists.txt");
-        return {};
-    }
-
-    // Absolute script path
-    const QString scriptPath = QDir(projectRoot).filePath(QStringLiteral("cmake/PackSource.cmake"));
-
-    appendDebug(projectRoot, QString("PackSource.cmake=%1 exists=%2").arg(scriptPath).arg(QFileInfo::exists(scriptPath)));
-
-    if (!QFileInfo::exists(scriptPath))
-    {
-        log += QObject::tr("ERROR: PackSource.cmake not found:\n%1\n").arg(scriptPath);
-        if (outProcessLog) *outProcessLog = log;
-        appendDebug(projectRoot, "ERROR: Missing PackSource.cmake");
-        return {};
-    }
-
-    // Invoke PackSource.cmake
-    QProcess proc;
-    proc.setProgram(QStringLiteral("cmake"));
-
-    QStringList args;
-    args << QStringLiteral("-DPROJECT_ROOT=%1").arg(projectRoot)
-         << QStringLiteral("-DINCLUDE_EXTENSIONS=%1").arg(includeExts.join(';'))
-         << QStringLiteral("-DEXCLUDE_DIRS=%1").arg(effectiveExcludeDirs.join(';'))
-         << QStringLiteral("-P")
-         << scriptPath;
-
-    appendDebug(projectRoot, QString("cmake program=%1").arg(proc.program()));
-    appendDebug(projectRoot, QString("cmake args=%1").arg(args.join(' ')));
-    appendDebug(projectRoot, QString("cmake workingDir=%1").arg(projectRoot));
-
-    proc.setArguments(args);
-    proc.setWorkingDirectory(projectRoot);
-    proc.start();
-
-    if (!proc.waitForFinished(-1))
-    {
-        log += QObject::tr("ERROR: cmake process did not finish.\n");
-        if (outProcessLog) *outProcessLog = log;
-        appendDebug(projectRoot, "ERROR: cmake did not finish");
-        return {};
-    }
-
-    const QString stdOut = QString::fromUtf8(proc.readAllStandardOutput());
-    const QString stdErr = QString::fromUtf8(proc.readAllStandardError());
-
-    appendDebug(projectRoot, QString("cmake exitCode=%1 exitStatus=%2").arg(proc.exitCode()).arg(proc.exitStatus() == QProcess::NormalExit ? "NormalExit" : "Crash"));
-
-    if (!stdOut.trimmed().isEmpty()) appendDebug(projectRoot, QString("cmake stdout:\n%1").arg(stdOut));
-    if (!stdErr.trimmed().isEmpty()) appendDebug(projectRoot, QString("cmake stderr:\n%1").arg(stdErr));
-
-    log += stdOut;
-    log += stdErr;
-
-    if (proc.exitStatus() != QProcess::NormalExit || proc.exitCode() != 0)
-    {
-        log += QObject::tr("ERROR: Project‑Source generation failed.\n");
-        if (outProcessLog) *outProcessLog = log;
-        appendDebug(projectRoot, "ERROR: cmake returned failure");
-        return {};
     }
 
     const QString outPath = QDir(projectRoot).filePath(QStringLiteral("Project-Source.txt"));
 
-    appendDebug(projectRoot, QString("Project-Source.txt=%1 exists=%2") .arg(outPath).arg(QFileInfo::exists(outPath)));
+    appendDebug(projectRoot, "Invoking ProjectSourceGenerator");
+
+    if (!ProjectSourceGenerator::generateProjectSource(projectRoot, includeExts, effectiveExcludeDirs, outPath))
+    {
+        log += QObject::tr("ERROR: Project‑Source generation failed.\n");
+        if (outProcessLog) *outProcessLog = log;
+        appendDebug(projectRoot, "ERROR: ProjectSourceGenerator failed");
+        return {};
+    }
+
+    appendDebug(projectRoot, QString("Project-Source.txt=%1 exists=%2").arg(outPath).arg(QFileInfo::exists(outPath)));
 
     if (!QFileInfo::exists(outPath))
     {
@@ -451,7 +381,6 @@ QString ProjectSourceExporter::generateAndReturnPath(QWidget* parent, QStatusBar
         return {};
     }
 
-    // Backup
     postStatus(status, QObject::tr("Project‑Source generated. Creating backup..."));
     appendDebug(projectRoot, "Backup: starting");
 
@@ -460,10 +389,6 @@ QString ProjectSourceExporter::generateAndReturnPath(QWidget* parent, QStatusBar
         ProjectSourceExporter::backupProjectToTimestampedFolder(
             parent, status, projectRoot,
             effectiveExcludeDirs, backupBase, &backupLog);
-
-    appendDebug(projectRoot, QString("Backup folder=%1").arg(backupFolder));
-
-    if (!backupLog.trimmed().isEmpty()) appendDebug(projectRoot, QString("Backup log:\n%1").arg(backupLog));
 
     if (backupFolder.isEmpty())
     {

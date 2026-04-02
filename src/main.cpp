@@ -1,14 +1,13 @@
 /*!
  * ********************************************************************************************************************************
- * @file main.cpp
- * @brief Application entry point for ProjectSourceDoc.
- * @authors     Jeffrey Scott Flesher using AI: Copilot
- * @date        2026-03-31
+ * @file        main.cpp
+ * @brief       Application entry point for ProjectSourceDoc.
  * @details
- *  This file initializes the Qt application object, installs runtime event filters, applies a theme-aware application icon,
- *  installs the application translator from embedded resources, and launches the main UI.
+ *  Initializes the Qt application, installs runtime event filters, applies theme-aware resources,
+ *  loads translations, resolves VERSION from the project root, and launches the main UI.
+ * @authors     Jeffrey Scott Flesher using AI: Copilot
+ * @date        2026-04-02
  *********************************************************************************************************************************/
-
 #include "MainWindow.h"
 
 #include <QApplication>
@@ -21,6 +20,7 @@
 #include <QIcon>
 #include <QLocale>
 #include <QPalette>
+#include <QTextStream>
 #include <QTimer>
 #include <QTranslator>
 #include <QWidget>
@@ -28,34 +28,82 @@
 
 /*!
  * ********************************************************************************************************************************
- * @brief Configure early runtime (before QApplication)
+ * @brief Configure early runtime (before QApplication).
  *
  * This function is restricted to environment configuration only.
  * It must NOT call any QCoreApplication / QApplication APIs.
  *********************************************************************************************************************************/
 static void configureEarlyRuntime(int argc, char *argv[])
 {
-    #ifdef __MINGW32__
-    // Force OpenGL RHI on MinGW for stability (do NOT remove).
+#ifdef __MINGW32__
     qputenv("QT_DEFAULT_RHI", "opengl");
     qputenv("QT_QPA_PLATFORM", "windows");
 
-    // Optional: allow plugins next to the executable (Windows portability).
     const QString exeDir = QFileInfo(QString::fromLocal8Bit(argv[0])).absolutePath();
-    const QString pluginsDir = QDir(exeDir).filePath("plugins");
-    if (QDir(pluginsDir).exists())
-    {
-        qputenv("QT_PLUGIN_PATH", QFile::encodeName(pluginsDir));
-    }
+    const QString pluginsDir = QDir(exeDir).filePath(QStringLiteral("plugins"));
+    if (QDir(pluginsDir).exists()) qputenv("QT_PLUGIN_PATH", QFile::encodeName(pluginsDir));
 
-    // Diagnostic output (stderr is safe pre-QApplication).
     fprintf(stderr, "QT_DEFAULT_RHI=%s\n", qgetenv("QT_DEFAULT_RHI").constData());
     fprintf(stderr, "QT_QPA_PLATFORM=%s\n", qgetenv("QT_QPA_PLATFORM").constData());
     fprintf(stderr, "QT_PLUGIN_PATH=%s\n", qgetenv("QT_PLUGIN_PATH").constData());
-    #else
+#else
     Q_UNUSED(argc);
     Q_UNUSED(argv);
-    #endif
+#endif
+}
+
+/*!
+ * ********************************************************************************************************************************
+ * @brief Locate the project root directory.
+ * @details Walks upward from the executable directory until CMakeLists.txt is found.
+ * @return  Absolute path to project root, or empty string if not found.
+ *********************************************************************************************************************************/
+static QString findProjectRoot()
+{
+    QDir dir(QCoreApplication::applicationDirPath());
+
+    while (dir.exists())
+    {
+        if (QFileInfo::exists(dir.filePath(QStringLiteral("CMakeLists.txt")))) return dir.absolutePath();
+        if (!dir.cdUp()) break;
+    }
+
+    return {};
+}
+
+/*!
+ * ********************************************************************************************************************************
+ * @brief Load application version from VERSION file.
+ * @details VERSION is the single source of truth per RELEASE.md.
+ * @return  Version string, or "0.0.0" if unavailable.
+ *********************************************************************************************************************************/
+static QString loadVersionFromFile()
+{
+    const QString projectRoot = findProjectRoot();
+    if (projectRoot.isEmpty())
+    {
+        qWarning() << "Project root not found; VERSION unavailable";
+        return QStringLiteral("0.0.0");
+    }
+
+    const QString versionPath = QDir(projectRoot).filePath(QStringLiteral("VERSION"));
+    QFile file(versionPath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+    {
+        qWarning() << "VERSION file not readable:" << versionPath;
+        return QStringLiteral("0.0.0");
+    }
+
+    QTextStream in(&file);
+    const QString version = in.readLine().trimmed();
+    if (version.isEmpty())
+    {
+        qWarning() << "VERSION file empty:" << versionPath;
+        return QStringLiteral("0.0.0");
+    }
+
+    qDebug() << "Loaded VERSION:" << version << "from" << versionPath;
+    return version;
 }
 
 /*!
@@ -75,18 +123,14 @@ static bool isDarkTheme()
  *********************************************************************************************************************************/
 static void applyThemedAppIcon()
 {
-    const QString theme = isDarkTheme() ? "dark" : "light";
-    const QString path = QString(":/icons/%1/app.svg").arg(theme);
+    const QString theme = isDarkTheme() ? QStringLiteral("dark") : QStringLiteral("light");
+    const QString path = QStringLiteral(":/icons/%1/app.svg").arg(theme);
 
     const QIcon icon(path);
     QApplication::setWindowIcon(icon);
 
-    for (QWidget *w : QApplication::topLevelWidgets())
-    {
-        w->setWindowIcon(icon);
-    }
-
-    qDebug() << "App icon path:" << path << "exists?" << QFile::exists(path) << "isNull?" << icon.isNull();
+    const auto widgets = QApplication::topLevelWidgets();
+    for (QWidget *w : widgets) w->setWindowIcon(icon);
 }
 
 /*!
@@ -97,11 +141,20 @@ static void applyThemedAppIcon()
 class ThemeWatcher final : public QObject
 {
     public:
+        /*!
+         * ****************************************************************************************************************************
+         * @brief Construct ThemeWatcher.
+         *****************************************************************************************************************************/
         explicit ThemeWatcher(QObject *parent = nullptr) : QObject(parent) {}
 
     protected:
+        /*!
+         * ****************************************************************************************************************************
+         * @brief Event filter for theme-related changes.
+         *****************************************************************************************************************************/
         bool eventFilter(QObject *obj, QEvent *ev) override
         {
+            Q_UNUSED(obj);
             switch (ev->type())
             {
             case QEvent::ApplicationPaletteChange:
@@ -112,7 +165,7 @@ class ThemeWatcher final : public QObject
             default:
                 break;
             }
-            return QObject::eventFilter(obj, ev);
+            return false;
         }
 };
 
@@ -123,8 +176,8 @@ class ThemeWatcher final : public QObject
 static QString normalizedLocale()
 {
     const QString systemLocale = QLocale::system().name();
-    if (systemLocale == "zh_CN") return "zh_CN";
-    return systemLocale.section('_', 0, 0);
+    if (systemLocale == QStringLiteral("zh_CN")) return QStringLiteral("zh_CN");
+    return systemLocale.section(QLatin1Char('_'), 0, 0);
 }
 
 /*!
@@ -134,8 +187,8 @@ static QString normalizedLocale()
 static bool loadAppTranslator(QTranslator &translator)
 {
     const QString loc = normalizedLocale();
-    if (translator.load(QString(":/i18n/ProjectSourceDoc_%1.qm").arg(loc))) return true;
-    if (translator.load(":/i18n/ProjectSourceDoc_en.qm")) return true;
+    if (translator.load(QStringLiteral(":/i18n/ProjectSourceDoc_%1.qm").arg(loc))) return true;
+    if (translator.load(QStringLiteral(":/i18n/ProjectSourceDoc_en.qm"))) return true;
     return false;
 }
 
@@ -145,38 +198,32 @@ static bool loadAppTranslator(QTranslator &translator)
  *********************************************************************************************************************************/
 int main(int argc, char *argv[])
 {
-    // ✅ Environment setup only
     configureEarlyRuntime(argc, argv);
 
-    // ✅ QApplication must be constructed as early as possible
     QApplication app(argc, argv);
 
-    QApplication::setApplicationName("ProjectSourceDoc");
-    QApplication::setOrganizationName("ProjectSourceDoc");
-    QApplication::setApplicationVersion("0.1.0");
+    QApplication::setApplicationName(QStringLiteral("ProjectSourceDoc"));
+    QApplication::setOrganizationName(QStringLiteral("ProjectSourceDoc"));
+    QApplication::setApplicationVersion(loadVersionFromFile());
 
-    // ✅ Install theme watcher (safe after QApplication)
     ThemeWatcher watcher(&app);
     app.installEventFilter(&watcher);
 
-    // ✅ Defer ALL UI-touching startup work until event loop is active
     QTimer::singleShot(0, &app,
                        [&app]()
                        {
                            static QTranslator translator;
-                           const bool loaded = loadAppTranslator(translator);
-
-                           qDebug() << "Translator locale:" << normalizedLocale() << "loaded?" << loaded;
-                           if (loaded)
-                           { app.installTranslator(&translator); }
+                           if (loadAppTranslator(translator)) app.installTranslator(&translator);
                            applyThemedAppIcon();
                        });
-    // ✅ Create main window AFTER translator install is queued
+
     MainWindow window;
     window.show();
+
     return app.exec();
 }
 
-/**********************************************************************************************************************************
- *  End of main.cpp
+/*!
+ * ********************************************************************************************************************************
+ * @brief End of main.cpp
  *********************************************************************************************************************************/

@@ -9,7 +9,7 @@
  *               backup logic to ProjectSourceExporter.
  *
  * @author       Jeffrey Scott Flesher
- * @date         2026-04-01
+ * @date         2026-04-02
  *********************************************************************************************************************************/
 
 #include "MainWindow.h"
@@ -44,17 +44,12 @@
 #include <QStyle>
 #include <QStandardItemModel>
 
+#include "AboutDialog.h"
 #include "AppLogUtils.h"
 #include "EmbeddedDocs.h"
 #include "ProjectSourceExporter.h"
 #include "StatusBarQueue.h"
 #include "ProjectPaths.h"
-
-//#include "CMakeSourceParser.h"
-//#include "GitIgnoreMatcher.h"
-//#include "ProjectNode.h"
-//#include "ProjectTreeBuilder.h"
-//#include "ProjectSourceGenerator.h"
 
 /* ------------------------------------------------------------------------------------------------
  * Persistent settings keys
@@ -223,8 +218,7 @@ void MainWindow::createActions()
     connect(m_usageAction, &QAction::triggered, this, [this]() { psd::docs::showUsageDialog(this); });
 
     m_aboutAction = new QAction(themedIcon("help"), tr("About"), this);
-    connect(m_aboutAction, &QAction::triggered, this, [this]() { statusBar()->showMessage( tr("ProjectSource — Generate Project‑Source.txt from a project."), 4000); });
-}
+    connect(m_aboutAction, &QAction::triggered, this, [this]() { AboutDialog dlg(this); dlg.exec(); });}
 
 /*!
  * ********************************************************************************************************************************
@@ -426,9 +420,10 @@ bool MainWindow::openProjectFolder(const QString &folderPath, bool showCMakeIfPr
 }
 
 /*!
- * ********************************************************************************************************************************
- * @brief        Handles File → Open.
- *********************************************************************************************************************************/
+ * ****************************************************************************************************************************
+ * @brief   Handles File → Open.
+ * @details Opens a project folder and synchronizes the Settings tab selection.
+ *****************************************************************************************************************************/
 void MainWindow::onOpenTriggered()
 {
     const QString start = !m_openProjectRoot.isEmpty() ? m_openProjectRoot : QDir::homePath();
@@ -437,7 +432,14 @@ void MainWindow::onOpenTriggered()
 
     if (dir.isEmpty()) return;
 
-    openProjectFolder(dir, true);
+    if (!openProjectFolder(dir, true)) return;
+
+    /* ------------------------------------------------------------------------------------------------
+     * Match Recent-project behavior:
+     * - Ensure Settings tab is active
+     * - Ensure selected project is visible
+     * ------------------------------------------------------------------------------------------------ */
+    if (m_tabs) m_tabs->setCurrentIndex(1);
 }
 
 /*!
@@ -954,9 +956,10 @@ void MainWindow::loadSettingsForProject(const QString &projectRoot)
 }
 
 /*!
- * ********************************************************************************************************************************
- * @brief        Handles Tools → Create Project‑Source.txt.
- *********************************************************************************************************************************/
+ * ****************************************************************************************************************************
+ * @brief   Handles Tools → Create Project‑Source.txt.
+ * @details Validates required Settings values before invoking ProjectSourceExporter.
+ *****************************************************************************************************************************/
 void MainWindow::onProjectSourceTriggered()
 {
     if (m_statusQueue)
@@ -965,22 +968,40 @@ void MainWindow::onProjectSourceTriggered()
         statusBar()->showMessage(tr("Project Source: starting..."), 2000);
 
     const QString projectRoot = m_activeProjectRoot;
-
     if (projectRoot.trimmed().isEmpty() || !QDir(projectRoot).exists())
     {
         appendToLog(tr("ERROR: No active project selected.\n"));
         return;
     }
 
-    // ✅ DEBUG
+    /* ------------------------------------------------------------------------------------------------
+     * Validate Settings → Backup folder (required)
+     * ------------------------------------------------------------------------------------------------ */
+    if (!m_backupFolderEdit || m_backupFolderEdit->text().trimmed().isEmpty())
     {
-        QFile f(QDir(projectRoot).filePath("ProjectSource-Debug.log"));
+        if (m_tabs) m_tabs->setCurrentIndex(1); // Settings tab
+        if (m_backupFolderEdit) m_backupFolderEdit->setFocus();
+
+        if (m_statusQueue)
+            m_statusQueue->enqueue(tr("Please set a Backup folder in Settings before generating."), 5);
+        else
+            statusBar()->showMessage(tr("Please set a Backup folder in Settings before generating."), 5000);
+
+        appendToLog(tr("ERROR: Backup folder not set. Generation aborted.\n"));
+        return;
+    }
+
+    /* ------------------------------------------------------------------------------------------------
+     * Debug log (existing behavior)
+     * ------------------------------------------------------------------------------------------------ */
+    {
+        QFile f(QDir(projectRoot).filePath(QStringLiteral("ProjectSource-Debug.log")));
         if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
         {
-            // Optional: fallback to qWarning()
             qWarning() << "Failed to open debug log file:" << f.fileName();
             return;
         }
+
         QTextStream ts(&f);
         ts << "=== ProjectSource Debug Log ===\n";
         ts << "Active project root: " << projectRoot << "\n";
@@ -1081,6 +1102,16 @@ void MainWindow::loadProjectTree(const QString& projectRoot)
     appendToLog(tr("Note: Runtime source analysis is not performed by this application.\n"));
 }
 
+/*!
+ * ****************************************************************************************************************************
+ * @brief   Show the About dialog.
+ * @details Displays application information in a modal dialog.
+ *****************************************************************************************************************************/
+void MainWindow::showAboutDialog()
+{
+    AboutDialog dlg(this);
+    dlg.exec();
+}
 
 /*!
  * ********************************************************************************************************************************

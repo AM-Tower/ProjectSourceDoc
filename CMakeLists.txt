@@ -17,11 +17,6 @@ project(ProjectSourceDoc VERSION 0.1.0 LANGUAGES CXX)
 set(QT_IMAGEFORMATS_DISABLE_TIFF ON)
 
 # --------------------------------------------------------------------------------------------------
-# cmake/ folder: add to module search path
-# --------------------------------------------------------------------------------------------------
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
-
-# --------------------------------------------------------------------------------------------------
 # C++ standard
 # --------------------------------------------------------------------------------------------------
 set(CMAKE_CXX_STANDARD 17)
@@ -55,6 +50,10 @@ set(SOURCES
     src/StatusBarQueue.cpp
     src/ProjectPaths.cpp
     src/ProjectSourceExporter.cpp
+    src/ProjectTreeBuilder.cpp
+    src/ProjectSourceGenerator.cpp
+    src/ProjectSourceDoc.cpp
+    src/AboutDialog.cpp
     src/CMakeSourceParser.cpp
     src/GitIgnoreMatcher.cpp
 )
@@ -66,9 +65,13 @@ set(HEADERS
     src/StatusBarQueue.h
     src/ProjectPaths.h
     src/ProjectSourceExporter.h
+    src/ProjectTreeBuilder.h
+    src/ProjectSourceGenerator.h
     src/CMakeSourceParser.h
     src/GitIgnoreMatcher.h
     src/ProjectNode.h
+    src/ProjectSourceDoc.h
+    src/AboutDialog.h
 )
 
 set(DOC_FILES
@@ -159,6 +162,10 @@ if(BUILD_TESTS)
         src/StatusBarQueue.cpp
         src/ProjectPaths.cpp
         src/ProjectSourceExporter.cpp
+        src/ProjectTreeBuilder.cpp
+        src/ProjectSourceGenerator.cpp
+        src/ProjectSourceDoc.cpp
+        src/AboutDialog.cpp
         src/CMakeSourceParser.cpp
         src/GitIgnoreMatcher.cpp
         resources/ProjectSourceDoc.qrc

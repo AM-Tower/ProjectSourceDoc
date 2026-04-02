@@ -1,117 +1,115 @@
-/*! ******************************************************************************************************************************
+/*!
+ * ********************************************************************************************************************************
  * @file        ProjectSourceGenerator.cpp
- * @brief       Implementation of ProjectSourceGenerator.
- ******************************************************************************************************************************* */
-
+ * @brief       Project source aggregation and output generation.
+ * @details     Generates Project-Source.txt including metadata, project tree, and source file contents.
+ * @authors     Jeffrey Scott Flesher with the help of AI: Copilot
+ * @date        2026-04-02
+ *********************************************************************************************************************************/
 #include "ProjectSourceGenerator.h"
 
-#include <QFile>
+#include "ProjectTreeBuilder.h"
+
 #include <QDir>
-#include <QDateTime>
-#include <QRegularExpression>
+#include <QDirIterator>
+#include <QFile>
+#include <QFileInfo>
 #include <QTextStream>
 
-QString ProjectSourceGenerator::generate(const QString& projectRoot)
+/*!
+ * ****************************************************************************************************************************
+ * @brief   Determine whether a path should be excluded.
+ * @details Exclusion applies ONLY to top-level directories (root children).
+ * @param   relativePath Path relative to project root.
+ * @param   excludeDirs Directory exclusion patterns.
+ * @return  True if the path should be excluded.
+ *****************************************************************************************************************************/
+static bool shouldExcludePath(const QString &relativePath, const QStringList &excludeDirs)
 {
-    ensureGitIgnoreExists(projectRoot);
+    const int slashIndex = relativePath.indexOf(QLatin1Char('/'));
+    const QString topLevel = slashIndex == -1 ? relativePath : relativePath.left(slashIndex);
 
-    const QSet<QString> sources = parseCMakeSources(projectRoot);
-    const QString tree = buildTree(sources, projectRoot);
+    for (int i = 0; i < excludeDirs.size(); ++i)
+    {
+        const QString &pattern = excludeDirs.at(i);
+        if (pattern.endsWith('*') && topLevel.startsWith(pattern.left(pattern.size() - 1))) return true;
+        if (!pattern.endsWith('*') && topLevel == pattern) return true;
+    }
 
-    const QString outPath =
-        QDir(projectRoot).filePath(QStringLiteral("Project-Source.txt"));
-
-    writeProjectSource(outPath, tree, sources);
-    backupFiles(projectRoot, sources);
-
-    return outPath;
+    return false;
 }
 
-void ProjectSourceGenerator::ensureGitIgnoreExists(const QString& projectRoot)
+/*!
+ * ****************************************************************************************************************************
+ * @brief   Write the formatted project tree to Project-Source.txt.
+ * @details Replaces the former PackSource.cmake psd_write_project_tree() behavior.
+ * @param   out QTextStream bound to Project-Source.txt.
+ * @param   projectRoot Absolute project root directory.
+ * @param   excludeDirs Directory exclusion patterns.
+ *****************************************************************************************************************************/
+void ProjectSourceGenerator::writeProjectTree(QTextStream &out, const QString &projectRoot, const QStringList &excludeDirs)
 {
-    QFile gitIgnore(QDir(projectRoot).filePath(".gitignore"));
-    if (gitIgnore.exists())
-        return;
-
-    gitIgnore.open(QIODevice::WriteOnly | QIODevice::Text);
-    QTextStream out(&gitIgnore);
-
-    out << "build/\n";
-    out << ".git/\n";
-    out << "*.user\n";
-    out << "*.autosave\n";
-    out << "*.log\n";
+    out << ProjectTreeBuilder::buildProjectTreeText(projectRoot, excludeDirs);
 }
 
-QSet<QString> ProjectSourceGenerator::parseCMakeSources(const QString& projectRoot)
+/*!
+ * ****************************************************************************************************************************
+ * @brief   Generate Project-Source.txt for a project.
+ * @details Fully replaces PackSource.cmake file aggregation behavior.
+ * @param   projectRoot Absolute project root directory.
+ * @param   includeExts File extensions to include.
+ * @param   excludeDirs Directory exclusion patterns.
+ * @param   outFilePath Absolute output file path.
+ * @return  True on success; false on failure.
+ *****************************************************************************************************************************/
+bool ProjectSourceGenerator::generateProjectSource(const QString &projectRoot, const QStringList &includeExts, const QStringList &excludeDirs, const QString &outFilePath)
 {
-    QSet<QString> result;
-    QFile cmake(QDir(projectRoot).filePath("CMakeLists.txt"));
+    if (projectRoot.isEmpty() || !QDir(projectRoot).exists()) return false;
 
-    if (!cmake.open(QIODevice::ReadOnly | QIODevice::Text))
-        return result;
+    QFile outFile(outFilePath);
+    if (!outFile.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) return false;
 
-    const QString text = QString::fromUtf8(cmake.readAll());
+    QTextStream out(&outFile);
 
-    QRegularExpression re(R"(([A-Za-z0-9_\/\.-]+\.(cpp|c|h|hpp|qml|ui|qrc|txt|md)))");
-    auto it = re.globalMatch(text);
+    const QString divider = QStringLiteral("===================================================================================================================================\n");
+
+    out << QStringLiteral("Project-Source.txt\n");
+    out << QStringLiteral("Generated by ProjectSourceGenerator\n");
+    out << QStringLiteral("Root: ") << projectRoot << QLatin1Char('\n');
+    out << QStringLiteral("Included extensions: ") << includeExts.join(QStringLiteral("; ")) << QLatin1Char('\n');
+    out << QStringLiteral("Excluded dirs: ") << excludeDirs.join(QStringLiteral("; ")) << QLatin1Char('\n');
+    out << QLatin1Char('\n');
+
+    writeProjectTree(out, projectRoot, excludeDirs);
+
+    QDirIterator it(projectRoot, QDir::Files | QDir::NoSymLinks, QDirIterator::Subdirectories);
 
     while (it.hasNext())
     {
-        const QString rel = it.next().captured(1);
-        result.insert(QDir(projectRoot).absoluteFilePath(rel));
+        const QString absPath = it.next();
+        const QString relPath = QDir(projectRoot).relativeFilePath(absPath);
+
+        if (relPath == QStringLiteral("Project-Source.txt")) continue;
+        if (shouldExcludePath(relPath, excludeDirs)) continue;
+
+        const QFileInfo info(absPath);
+        const QString ext = info.suffix().toLower();
+        if (!includeExts.contains(ext)) continue;
+
+        QFile file(absPath);
+        if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) continue;
+
+        out << divider;
+        out << QStringLiteral("=============================== FILE: ") << relPath << QStringLiteral(" ===============================\n");
+        out << divider;
+        out << file.readAll() << QLatin1Char('\n');
     }
 
-    return result;
+    outFile.close();
+    return true;
 }
 
-QString ProjectSourceGenerator::buildTree(const QSet<QString>& files, const QString& root)
-{
-    QStringList lines;
-    lines << "PROJECT TREE:";
-    lines << "------------------------------------------------------------";
-
-    for (const QString& file : files)
-        lines << QDir(root).relativeFilePath(file);
-
-    return lines.join('\n');
-}
-
-void ProjectSourceGenerator::writeProjectSource(const QString& outPath, const QString& tree, const QSet<QString>& files)
-{
-    QFile out(outPath);
-    out.open(QIODevice::WriteOnly | QIODevice::Text);
-
-    QTextStream stream(&out);
-
-    stream << tree << "\n\n";
-
-    for (const QString& filePath : files)
-    {
-        QFile f(filePath);
-        if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
-            continue;
-
-        stream << "=============================================\n";
-        stream << "FILE: " << filePath << "\n";
-        stream << "=============================================\n";
-        stream << QString::fromUtf8(f.readAll()) << "\n\n";
-    }
-}
-
-void ProjectSourceGenerator::backupFiles(const QString& projectRoot, const QSet<QString>& files)
-{
-    const QString backupDir = QDir(projectRoot).filePath("backup/" + QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss"));
-
-    QDir().mkpath(backupDir);
-
-    for (const QString& file : files)
-    {
-        const QString rel = QDir(projectRoot).relativeFilePath(file);
-        const QString dst = QDir(backupDir).filePath(rel);
-
-        QDir().mkpath(QFileInfo(dst).path());
-        QFile::copy(file, dst);
-    }
-}
-
+/*!
+ * ********************************************************************************************************************************
+ * @brief End of ProjectSourceGenerator.cpp
+ *********************************************************************************************************************************/

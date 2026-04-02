@@ -1,55 +1,45 @@
 /*!
  * ********************************************************************************************************************************
- * @file        ProjectTreeBuilder.h
- * @brief       Deterministic project tree construction.
- * @details     Builds a directory-first project tree with correct indentation.
+ * @file        ProjectSourceDoc.h
+ * @brief       Project source document generation facade.
+ * @details     Replaces legacy PackSource.cmake invocation with C++ generator orchestration.
  * @authors     Jeffrey Scott Flesher with the help of AI: Copilot
  * @date        2026-04-02
  *********************************************************************************************************************************/
 #pragma once
 
 #include <QString>
-#include <QStringList>
-#include <QVector>
 
 /*!
  * ****************************************************************************************************************************
- * @class   ProjectTreeBuilder
- * @brief   Builds a deterministic, sibling-aware project tree.
+ * @class   ProjectSourceDoc
+ * @brief   High-level interface for generating Project-Source.txt.
+ * @details Owns configuration and dispatches to ProjectSourceGenerator.
  *****************************************************************************************************************************/
-class ProjectTreeBuilder
+class ProjectSourceDoc
 {
     public:
         /*!
          * ****************************************************************************************************************************
-         * @brief   Build the formatted project tree text.
-         * @details Entry point for tree generation.
+         * @brief   Construct ProjectSourceDoc.
+         * @details Stores the project root directory.
          * @param   projectRoot Absolute project root directory.
-         * @param   excludeDirs Directory exclusion patterns (root-level only).
-         * @return  Fully formatted project tree text.
          *****************************************************************************************************************************/
-        static QString buildProjectTreeText(const QString &projectRoot, const QStringList &excludeDirs);
+        explicit ProjectSourceDoc(const QString &projectRoot);
 
-    private:
         /*!
          * ****************************************************************************************************************************
-         * @brief   Recursively walk directories and emit tree entries.
-         * @details Uses sibling-aware indentation to avoid phantom vertical bars.
-         * @param   projectRoot Absolute project root directory.
-         * @param   relativePath Current relative path.
-         * @param   excludeDirs Directory exclusion patterns.
-         * @param   outLines Accumulated output lines.
-         * @param   continueAtDepth Tracks whether to draw vertical bars per depth.
+         * @brief   Generate Project-Source.txt.
+         * @details Fully replaces PackSource.cmake execution path.
+         * @return  True on success; false on failure.
          *****************************************************************************************************************************/
-        static void walkDirectory(
-            const QString &projectRoot,
-            const QString &relativePath,
-            const QStringList &excludeDirs,
-            QStringList &outLines,
-            QVector<bool> &continueAtDepth);
+        bool generate();
+
+    private:
+        QString m_projectRoot;
 };
 
 /*!
  * ********************************************************************************************************************************
- * @brief End of ProjectTreeBuilder.h
+ * @brief End of ProjectSourceDoc.h
  *********************************************************************************************************************************/
