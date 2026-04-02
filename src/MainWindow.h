@@ -254,6 +254,17 @@ class MainWindow final : public QMainWindow
          *****************************************************************************************************************************/
         void updateThemeMenuChecks(ThemeMode mode);
 
+        /*! ******************************************************************************************************************************
+         * @brief       Loads and analyzes a project folder at runtime.
+         * @param[in]   projectRoot Absolute path to the selected project.
+         ******************************************************************************************************************************* */
+        void loadProjectTree(const QString& projectRoot);
+        /*!
+         * ********************************************************************************************************************************
+         * @brief   setActiveProject
+         *********************************************************************************************************************************/
+        void setActiveProject(const QString &projectRoot, bool updateSettingsSelection);
+
         /* --------------------------- Settings Tab --------------------------- */
 
         //! Create the settings tab UI.
@@ -277,9 +288,6 @@ class MainWindow final : public QMainWindow
         //! Enable or disable the settings panel.
         void setSettingsPanelEnabled(bool enabled);
 
-        //! Compute a stable project ID from an absolute path.
-        static QString projectIdForPath(const QString &absPath);
-
         //! Normalize an extension string.
         static QString normalizeExt(const QString &ext);
 
@@ -292,11 +300,7 @@ class MainWindow final : public QMainWindow
         //! Default excluded directories.
         static QStringList defaultExcludeDirs();
 
-        /*!
-         * @brief Extract exclude directory patterns from a project's .gitignore file.
-         * @param projectRoot Absolute path to the project root.
-         * @return List of excluded directory patterns.
-         */
+        //! @brief Extract exclude directory patterns from a project's .gitignore file.
         static QStringList excludeDirsFromGitignore(const QString &projectRoot);
 
     private:
@@ -309,6 +313,8 @@ class MainWindow final : public QMainWindow
 
         QString m_openProjectRoot;
         QString m_currentLogFilePath;
+        // Always points to the currently active project
+        QString m_activeProjectRoot;
 
         QAction *m_openAction{nullptr};
         QAction *m_projectSourceAction{nullptr};

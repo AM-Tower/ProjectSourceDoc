@@ -9,7 +9,7 @@
  *               backup logic to ProjectSourceExporter.
  *
  * @author       Jeffrey Scott Flesher
- * @date         2026-03-31
+ * @date         2026-04-01
  *********************************************************************************************************************************/
 
 #include "MainWindow.h"
@@ -38,14 +38,23 @@
 #include <QTextCursor>
 #include <QTextEdit>
 #include <QToolBar>
+#include <QToolButton>
 #include <QVBoxLayout>
 #include <QSignalBlocker>
 #include <QStyle>
+#include <QStandardItemModel>
 
 #include "AppLogUtils.h"
 #include "EmbeddedDocs.h"
 #include "ProjectSourceExporter.h"
 #include "StatusBarQueue.h"
+#include "ProjectPaths.h"
+
+//#include "CMakeSourceParser.h"
+//#include "GitIgnoreMatcher.h"
+//#include "ProjectNode.h"
+//#include "ProjectTreeBuilder.h"
+//#include "ProjectSourceGenerator.h"
 
 /* ------------------------------------------------------------------------------------------------
  * Persistent settings keys
@@ -272,10 +281,30 @@ void MainWindow::createToolbar()
     m_toolbar = addToolBar(tr("Main Toolbar"));
     m_toolbar->setMovable(false);
 
+    // Open
     m_toolbar->addAction(m_openAction);
+
+    // Recent (dropdown) — uses the same menu as File → Open Recent
+    auto *recentBtn = new QToolButton(m_toolbar);
+    recentBtn->setText(tr("Recent"));
+    recentBtn->setIcon(themedIcon(QStringLiteral("doc")));
+    recentBtn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    recentBtn->setPopupMode(QToolButton::InstantPopup);
+
+    // Wire directly to the existing File menu's recent menu
+    // (rebuildRecentProjectsMenu() updates m_recentMenu's contents in place)
+    recentBtn->setMenu(m_recentMenu);
+
+    m_toolbar->addWidget(recentBtn);
+
     m_toolbar->addSeparator();
+
+    // Create Project‑Source
     m_toolbar->addAction(m_projectSourceAction);
+
     m_toolbar->addSeparator();
+
+    // Exit
     m_toolbar->addAction(m_exitAction);
 }
 
@@ -376,7 +405,7 @@ bool MainWindow::openProjectFolder(const QString &folderPath, bool showCMakeIfPr
 
     if (abs.trimmed().isEmpty() || !QDir(abs).exists()) return false;
 
-    m_openProjectRoot = abs;
+    setActiveProject(abs, /*updateSettingsSelection=*/true);
     addRecentProject(abs);
 
     if (m_statusQueue) m_statusQueue->enqueue(tr("Opened project: %1").arg(abs), 3);
@@ -445,14 +474,71 @@ void MainWindow::onClearRecentTriggered()
 }
 
 /*!
- * ********************************************************************************************************************************
- * @brief        Computes a stable project identifier for settings storage.
- *********************************************************************************************************************************/
-QString MainWindow::projectIdForPath(const QString &absPath)
+ * ****************************************************************************************************************************
+ * @brief Extract exclude directory patterns from a project's .gitignore file.
+ * @details Directory rules only:
+ *          - ignores comments/blank lines
+ *          - ignores negations (!)
+ *          - accepts only lines ending with '/'
+ *          - strips trailing '/' and normalizes "dir/ *" (Space added before * because it breaks comment)
+ * @param[in] projectRoot Absolute project root.
+ * @return Directory exclusion patterns (no trailing slash).
+ *****************************************************************************************************************************/
+QStringList MainWindow::excludeDirsFromGitignore(const QString &projectRoot)
 {
-    const QByteArray hash = QCryptographicHash::hash(absPath.toUtf8(), QCryptographicHash::Md5);
+    QStringList result;
+    const QString gitignorePath = QDir(projectRoot).filePath(QStringLiteral(".gitignore"));
+    QFile file(gitignorePath);
 
-    return QString::fromLatin1(hash.toHex());
+    if (!file.exists() || !file.open(QIODevice::ReadOnly | QIODevice::Text)) return result;
+
+    QTextStream in(&file);
+    while (!in.atEnd())
+    {
+        QString line = in.readLine().trimmed();
+        if (line.isEmpty() || line.startsWith('#')) continue;
+        if (line.startsWith('!')) continue;
+
+        if (!line.endsWith('/')) continue;
+        line.chop(1);
+
+        if (line.endsWith(QStringLiteral("/*"))) line.chop(2);
+
+        if (!line.isEmpty() && !result.contains(line)) result.append(line);
+    }
+
+    return result;
+}
+
+/*!
+ * ********************************************************************************************************************************
+ * @brief   setActiveProject
+ *********************************************************************************************************************************/
+void MainWindow::setActiveProject(const QString &projectRoot, bool updateSettingsSelection)
+{
+    const QString abs = QDir(projectRoot).absolutePath();
+    if (abs.isEmpty() || !QDir(abs).exists()) return;
+
+    m_activeProjectRoot = abs;
+    m_openProjectRoot = abs;
+
+    if (updateSettingsSelection && m_projectFoldersList)
+    {
+        for (int i = 0; i < m_projectFoldersList->count(); ++i)
+        {
+            QListWidgetItem *item = m_projectFoldersList->item(i);
+            if (QDir(item->text()).absolutePath() == abs)
+            {
+                QSignalBlocker b(m_projectFoldersList);
+                m_projectFoldersList->setCurrentItem(item);
+
+                // ✅ IMPORTANT: initialize settings panel explicitly
+                setSettingsPanelEnabled(true);
+                loadSettingsForProject(abs);
+                break;
+            }
+        }
+    }
 }
 
 /*!
@@ -465,75 +551,26 @@ QStringList MainWindow::defaultIncludeExts()
 }
 
 /*!
- * ********************************************************************************************************************************
- * @brief        Returns default excluded directory patterns.
- *********************************************************************************************************************************/
+ * ****************************************************************************************************************************
+ * @brief Returns default excluded directory patterns for backward‑compatible calls.
+ *****************************************************************************************************************************/
 QStringList MainWindow::defaultExcludeDirs()
 {
-    return {QStringLiteral("build*"),   QStringLiteral(".rcc"),       QStringLiteral("CMakeFiles"),
-            QStringLiteral(".git"),     QStringLiteral(".qtcreator"), QStringLiteral("engines"),
-            QStringLiteral("AppDir"),  QStringLiteral("0-Archive")};
-}
-
-/*!
- * ********************************************************************************************************************************
- * @brief   Extracts excluded directory rules from a project's .gitignore file.
- *
- * @details Reads the `.gitignore` file located at the specified project root and
- *          returns a list of directory exclusion rules suitable for directory
- *          filtering. The parser:
- *            - Skips empty lines and comments
- *            - Ignores negation rules (!)
- *            - Accepts only directory rules ending with '/'
- *            - Rejects file-extension and single-file rules
- *            - Normalizes trailing slashes and glob suffixes
- *
- * @param[in] projectRoot Absolute path to the project root directory.
- *
- * @return  A list of relative directory paths to exclude, with no trailing slashes.
- * *******************************************************************************************************************************/
-QStringList MainWindow::excludeDirsFromGitignore(const QString &projectRoot)
-{
-    QStringList result;
-
-    const QString gitignorePath =
-        QDir(projectRoot).filePath(QStringLiteral(".gitignore"));
-
-    QFile file(gitignorePath);
-    if (!file.exists() ||
-        !file.open(QIODevice::ReadOnly | QIODevice::Text))
-        return result;
-
-    QTextStream in(&file);
-
-    while (!in.atEnd())
-    {
-        QString line = in.readLine().trimmed();
-
-               // Skip empty lines and comments
-        if (line.isEmpty() || line.startsWith('#'))
-            continue;
-
-               // Ignore negation rules
-        if (line.startsWith('!'))
-            continue;
-
-               // ✅ Directory rules ONLY: must end with '/'
-        if (!line.endsWith('/'))
-            continue;
-
-               // Remove trailing '/'
-        line.chop(1);
-
-               // Normalize gitignore-style "dir/*"
-        if (line.endsWith("/*"))
-            line.chop(2);
-
-        if (!result.contains(line))
-            result.append(line);
-    }
-
-    return result;
+    return {
+        QStringLiteral("build*"),
+        QStringLiteral("build_release"),
+        QStringLiteral("build-*"),
+        QStringLiteral("cmake-build-*"),
+        QStringLiteral("deploy"),
+        QStringLiteral("deploy-*"),
+        QStringLiteral("AppDir"),
+        QStringLiteral(".rcc"),
+        QStringLiteral("CMakeFiles"),
+        QStringLiteral(".git"),
+        QStringLiteral(".qtcreator"),
+        QStringLiteral("engines"),
+        QStringLiteral("0-Archive")
+    };
 }
 
 /*!
@@ -662,10 +699,13 @@ void MainWindow::createSettingsTab()
                 }
 
                 const QString path = QDir(current->text()).absolutePath();
+
+                // User action → activate project
+                setActiveProject(path, /*updateSettingsSelection=*/false);
+
                 setSettingsPanelEnabled(true);
                 loadSettingsForProject(path);
             });
-
     /* --------- NEW: Project folders --------- */
     connect(m_addProjectFolderBtn, &QPushButton::clicked, this, &MainWindow::onBrowseProjectFolder);
 
@@ -827,7 +867,7 @@ QStringList MainWindow::parseExtensionsText(const QString &text)
 void MainWindow::saveSettingsForProject(const QString &projectRoot) const
 {
     if (projectRoot.trimmed().isEmpty()) return;
-    const QString id = projectIdForPath(projectRoot);
+    const QString id = psd::paths::projectIdForPath(projectRoot);
     QSettings s;
     /* ---------- Include extensions ---------- */
     QStringList includeExts = defaultIncludeExts();
@@ -879,7 +919,7 @@ void MainWindow::loadSettingsForProject(const QString &projectRoot)
     if (projectRoot.trimmed().isEmpty()) return;
 
     QSettings s;
-    const QString id = projectIdForPath(projectRoot);
+    const QString id = psd::paths::projectIdForPath(projectRoot);
 
     QStringList includeExts = s.value(QStringLiteral("project/%1/includeExts").arg(id), defaultIncludeExts()).toStringList();
 
@@ -913,72 +953,55 @@ void MainWindow::loadSettingsForProject(const QString &projectRoot)
     if (m_backupFolderEdit) m_backupFolderEdit->setText(backupFolder);
 }
 
-/* =============================================================================================================================
- * Project‑Source generation entry point
- * =============================================================================================================================
- */
-
 /*!
  * ********************************************************************************************************************************
  * @brief        Handles Tools → Create Project‑Source.txt.
  *********************************************************************************************************************************/
 void MainWindow::onProjectSourceTriggered()
 {
-    if (m_openProjectRoot.trimmed().isEmpty())
-    {
-        onOpenTriggered();
+    if (m_statusQueue)
+        m_statusQueue->enqueue(tr("Project Source: starting..."), 2);
+    else
+        statusBar()->showMessage(tr("Project Source: starting..."), 2000);
 
-        if (m_openProjectRoot.trimmed().isEmpty())
-        {
-            if (m_statusQueue) m_statusQueue->enqueue(tr("No project folder selected."), 3);
-            return;
-        }
-    }
-    const QString cmakeListsPath = QDir(m_openProjectRoot).filePath(QStringLiteral("CMakeLists.txt"));
-    if (!QFileInfo::exists(cmakeListsPath))
+    const QString projectRoot = m_activeProjectRoot;
+
+    if (projectRoot.trimmed().isEmpty() || !QDir(projectRoot).exists())
     {
-        QMessageBox::warning(this, tr("Project Source"), tr("Selected folder does not contain CMakeLists.txt:\n\n%1").arg(m_openProjectRoot));
-        if (m_statusQueue) m_statusQueue->enqueue(tr("Selected folder is not a CMake project."), 5);
+        appendToLog(tr("ERROR: No active project selected.\n"));
         return;
     }
-    QSettings s;
-    const QString id = projectIdForPath(m_openProjectRoot);
-    const QStringList includeExts = s.value(QStringLiteral("project/%1/includeExts").arg(id), defaultIncludeExts()).toStringList();
-    const QStringList excludeDirs = s.value(QStringLiteral("project/%1/excludeDirs").arg(id), defaultExcludeDirs()).toStringList();
-    const QString backupBase = s.value(QStringLiteral("project/%1/backupFolder").arg(id)).toString();
-    beginLogReset();
-    QString backupLog;
-    const QString backupPath = ProjectSourceExporter::backupProjectToTimestampedFolder(this, statusBar(), m_openProjectRoot, excludeDirs, backupBase, &backupLog);
 
-    if (!backupLog.trimmed().isEmpty())
+    // ✅ DEBUG
     {
-        appendToLog(tr("==================================== [Backup] ====================================\n"));
-        appendToLog(backupLog);
-        appendToLog("\n");
-    }
-    if (backupPath.isEmpty())
-    {
-        appendToLog(tr("WARNING: Backup did not complete successfully. Proceeding anyway.\n\n"));
+        QFile f(QDir(projectRoot).filePath("ProjectSource-Debug.log"));
+        if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
+        {
+            // Optional: fallback to qWarning()
+            qWarning() << "Failed to open debug log file:" << f.fileName();
+            return;
+        }
+        QTextStream ts(&f);
+        ts << "=== ProjectSource Debug Log ===\n";
+        ts << "Active project root: " << projectRoot << "\n";
     }
 
-    QString processLog;
-    const QString outPath = ProjectSourceExporter::generateAndReturnPath(this, statusBar(), m_openProjectRoot, includeExts, excludeDirs, &processLog);
+    QString procLog;
+    const QString outPath = ProjectSourceExporter::generateAndReturnPath(this, statusBar(), projectRoot, &procLog);
 
-    if (!processLog.trimmed().isEmpty())
+    if (!procLog.trimmed().isEmpty() && m_logView)
     {
-        appendToLog(tr("================================ [Process Output] ================================\n"));
-        appendToLog(processLog);
-        appendToLog("\n");
+        m_logView->append(tr("\n==================== [Project Source Output] ====================\n"));
+        m_logView->append(procLog);
     }
 
     if (outPath.isEmpty())
     {
-        appendToLog(tr("ERROR: Project source generation failed.\n"));
-        if (m_statusQueue) m_statusQueue->enqueue(tr("Project Source failed."), 4);
+        statusBar()->showMessage(tr("Project Source: failed."), 4000);
         return;
     }
 
-    showFileInLogTab(outPath, tr("Project‑Source.txt (%1)").arg(outPath));
+    showFileInLogTab(outPath, tr("Project-Source.txt (%1)").arg(outPath));
 }
 
 /*!
@@ -1028,6 +1051,36 @@ void MainWindow::updateThemeMenuChecks(ThemeMode mode)
     m_themeLightAction->setChecked(mode == ThemeMode::Light);
     m_themeDarkAction->setChecked(mode == ThemeMode::Dark);
 }
+
+/*! ******************************************************************************************************************************
+ * @brief       Loads the current application project context.
+ * @details     This function intentionally performs no runtime source scanning
+ *              or tree construction. The application is not a runtime analyzer.
+ *
+ *              All source inspection and tree generation is performed by
+ *              ProjectSourceExporter when explicitly requested by the user.
+ *
+ * @param[in]   projectRoot Absolute path to the project root.
+ ******************************************************************************************************************************* */
+void MainWindow::loadProjectTree(const QString& projectRoot)
+{
+    if (projectRoot.isEmpty())
+    {
+        appendToLog(tr("ERROR: Project root is empty.\n"));
+        return;
+    }
+
+    if (!QDir(projectRoot).exists())
+    {
+        appendToLog(tr("ERROR: Project root does not exist:\n%1\n").arg(projectRoot));
+        return;
+    }
+
+    // Informational only — this app does not analyze project trees at runtime.
+    appendToLog(tr("Project root loaded:\n%1\n").arg(projectRoot));
+    appendToLog(tr("Note: Runtime source analysis is not performed by this application.\n"));
+}
+
 
 /*!
  * ********************************************************************************************************************************

@@ -10,7 +10,7 @@
  * functions do not attempt to discover or cache a “project root”.
  *
  * @authors     Jeffrey Scott Flesher with the help of AI: Copilot
- * @date        2026-03-31
+ * @date        2026-04-01
  *********************************************************************************************************************************/
 #pragma once
 
@@ -26,6 +26,9 @@ namespace psd::paths
      * non-Windows.
      *****************************************************************************************************************************/
     QString toBashPath(const QString &nativePath);
+
+    //! Compute a stable project ID from an absolute path.
+    QString projectIdForPath(const QString &absPath);
 
 } // namespace psd::paths
 

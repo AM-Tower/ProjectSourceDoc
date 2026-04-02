@@ -5,12 +5,13 @@
  * @details     Implements psd::paths::toBashPath() using wsl.exe wslpath -a on Windows.
  *
  * @authors     Jeffrey Scott Flesher with the help of AI: Copilot
- * @date        2026-03-26
+ * @date        2026-04-01
  *********************************************************************************************************************************/
 
 #include "ProjectPaths.h"
 
 #include <QProcess>
+#include <qcryptographichash.h>
 
 namespace psd::paths
 {
@@ -22,8 +23,7 @@ namespace psd::paths
      *****************************************************************************************************************************/
     static QString windowsPathToWslPath(const QString &windowsPath)
     {
-        if (windowsPath.trimmed().isEmpty())
-            return QString();
+        if (windowsPath.trimmed().isEmpty()) return QString();
 
         QString normalized = windowsPath;
         normalized.replace('\\', '/');
@@ -60,6 +60,17 @@ namespace psd::paths
         #endif
     }
 
+    /*!
+     * ****************************************************************************************************************************
+     * @brief Computes a stable project ID (MD5) from an absolute path.
+     * @param[in] absPath Absolute project root path.
+     * @return Lowercase MD5 hex digest.
+    *****************************************************************************************************************************/
+    QString projectIdForPath(const QString &absPath)
+    {
+        const QByteArray hash = QCryptographicHash::hash(absPath.toUtf8(), QCryptographicHash::Md5);
+        return QString::fromLatin1(hash.toHex());
+    }
 } // namespace psd::paths
 
 /*!

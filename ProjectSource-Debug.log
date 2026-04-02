@@ -1,0 +1,56 @@
+=== ProjectSource Debug Log ===
+Active project root: /home/jflesher/Nextcloud/workspace/ProjectSource/ProjectSourceDoc
+2026-04-01T20:53:38  === generateAndReturnPath ENTER ===
+2026-04-01T20:53:38  projectRoot=/home/jflesher/Nextcloud/workspace/ProjectSource/ProjectSourceDoc
+2026-04-01T20:53:38  Loading project settings
+2026-04-01T20:53:38  settingsInclude=cpp,h,md
+2026-04-01T20:53:38  settingsExclude=build*,.rcc,CMakeFiles,.git,.qtcreator,engines,AppDir,0-Archive,build,build_release,build-*,cmake-build-*,deploy,deploy-*,runtime-diagnostics
+2026-04-01T20:53:38  backupBase=/home/jflesher/Nextcloud/workspace/ProjectSource/Backups
+2026-04-01T20:53:38  effective includeExts=cpp,h,md
+2026-04-01T20:53:38  effectiveExcludeDirs=build*,.rcc,CMakeFiles,.git,.qtcreator,engines,0-Archive,AppDir,build,build_release,build-*,cmake-build-*,deploy,deploy-*,runtime-diagnostics
+2026-04-01T20:53:38  CMakeLists.txt=/home/jflesher/Nextcloud/workspace/ProjectSource/ProjectSourceDoc/CMakeLists.txt exists=1
+2026-04-01T20:53:38  PackSource.cmake=/home/jflesher/Nextcloud/workspace/ProjectSource/ProjectSourceDoc/cmake/PackSource.cmake exists=1
+2026-04-01T20:53:38  cmake program=cmake
+2026-04-01T20:53:38  cmake args=-DPROJECT_ROOT=/home/jflesher/Nextcloud/workspace/ProjectSource/ProjectSourceDoc -DINCLUDE_EXTENSIONS=cpp;h;md -DEXCLUDE_DIRS=build*;.rcc;CMakeFiles;.git;.qtcreator;engines;0-Archive;AppDir;build;build_release;build-*;cmake-build-*;deploy;deploy-*;runtime-diagnostics -P /home/jflesher/Nextcloud/workspace/ProjectSource/ProjectSourceDoc/cmake/PackSource.cmake
+2026-04-01T20:53:38  cmake workingDir=/home/jflesher/Nextcloud/workspace/ProjectSource/ProjectSourceDoc
+
+--- PackSource.cmake ---
+PROJECT_ROOT=/home/jflesher/Nextcloud/workspace/ProjectSource/ProjectSourceDoc
+INCLUDE_EXTENSIONS=cpp;h;md
+EXCLUDE_DIRS=build*;.rcc;CMakeFiles;.git;.qtcreator;engines;0-Archive;AppDir;build;build_release;build-*;cmake-build-*;deploy;deploy-*;runtime-diagnostics
+ALL_FILES count=29
+TREE available=TRUE
+TREE result=0
+2026-04-01T20:53:38  cmake exitCode=0 exitStatus=NormalExit
+2026-04-01T20:53:38  cmake stdout:
+-- Wrote /home/jflesher/Nextcloud/workspace/ProjectSource/ProjectSourceDoc/Project-Source.txt (29 files)
+
+2026-04-01T20:53:38  Project-Source.txt=/home/jflesher/Nextcloud/workspace/ProjectSource/ProjectSourceDoc/Project-Source.txt exists=1
+2026-04-01T20:53:38  Backup: starting
+2026-04-01T20:53:42  Backup folder=/home/jflesher/Nextcloud/workspace/ProjectSource/Backups/ProjectSourceDoc/2026-04-01_20-53-38
+2026-04-01T20:53:42  Backup log:
+[Backup] Project Root: /home/jflesher/Nextcloud/workspace/ProjectSource/ProjectSourceDoc
+[Backup] Base Folder : /home/jflesher/Nextcloud/workspace/ProjectSource/Backups
+[Backup] Target      : /home/jflesher/Nextcloud/workspace/ProjectSource/Backups/ProjectSourceDoc/2026-04-01_20-53-38
+[Backup] Excludes    : build*;.rcc;CMakeFiles;.git;.qtcreator;engines;0-Archive;AppDir;build;build_release;build-*;cmake-build-*;deploy;deploy-*;runtime-diagnostics
+
+
+[Backup] Done. copied=70 skipped=6 errors=0 ok=true
+
+2026-04-01T20:53:42  SUCCESS
+
+--- PackSource.cmake ---
+PROJECT_ROOT=/home/jflesher/Nextcloud/workspace/ProjectSource/ProjectSourceDoc
+INCLUDE_EXTENSIONS=
+EXCLUDE_DIRS=build*;.rcc;CMakeFiles;.git;.qtcreator;engines;AppDir;0-Archive;build;build_release;build-*;cmake-build-*;deploy;deploy-*;runtime-diagnostics
+ALL_FILES count=29
+TREE available=TRUE
+TREE result=0
+
+--- PackSource.cmake ---
+PROJECT_ROOT=/home/jflesher/Nextcloud/workspace/ProjectSource/ProjectSourceDoc
+INCLUDE_EXTENSIONS=
+EXCLUDE_DIRS=build*;.rcc;CMakeFiles;.git;.qtcreator;engines;AppDir;0-Archive;build;build_release;build-*;cmake-build-*;deploy;deploy-*;runtime-diagnostics
+ALL_FILES count=29
+TREE available=TRUE
+TREE result=0

@@ -3,12 +3,10 @@
 # @file cmake/PackSource.cmake
 # @brief Create a single packaged source file for AI review
 # @authors Jeffrey Scott Flesher with the help of AI: Copilot
-# @date 2026-03-31
+# @date 2026-04-01
 # --------------------------------------------------------------------------------------------------
 
 cmake_minimum_required(VERSION 3.25)
-
-message(STATUS "PROJECT_ROOT = '${PROJECT_ROOT}'")
 
 # --------------------------------------------------------------------------------
 # Validate input
@@ -19,6 +17,19 @@ endif()
 
 file(TO_CMAKE_PATH "${PROJECT_ROOT}" PROJECT_ROOT)
 
+# --------------------------------------------------------------------------------
+# Debug log (append)
+# --------------------------------------------------------------------------------
+file(APPEND "${PROJECT_ROOT}/ProjectSource-Debug.log"
+  "\n--- PackSource.cmake ---\n"
+  "PROJECT_ROOT=${PROJECT_ROOT}\n"
+  "INCLUDE_EXTENSIONS=${INCLUDE_EXTENSIONS}\n"
+  "EXCLUDE_DIRS=${EXCLUDE_DIRS}\n"
+)
+
+# --------------------------------------------------------------------------------
+# Output file
+# --------------------------------------------------------------------------------
 set(OUT_FILE "${PROJECT_ROOT}/Project-Source.txt")
 file(WRITE "${OUT_FILE}" "")
 
@@ -42,10 +53,16 @@ if(NOT DEFINED EXCLUDE_DIRS OR EXCLUDE_DIRS STREQUAL "")
   )
 endif()
 
-separate_arguments(INCLUDE_EXTENSIONS)
-separate_arguments(EXCLUDE_DIRS)
+# --------------------------------------------------------------------------------
+# Compatibility: accept legacy exporter variable name
+# --------------------------------------------------------------------------------
+if((NOT DEFINED INCLUDE_EXTENSIONS OR INCLUDE_EXTENSIONS STREQUAL "")
+   AND DEFINED INCLUDE_EXTS
+   AND NOT INCLUDE_EXTS STREQUAL "")
+  set(INCLUDE_EXTENSIONS "${INCLUDE_EXTS}")
+endif()
 
-# Safety: ensure build* exists in the exclude list so build-wsl is excluded.
+# Safety: ensure build* exists in the exclude list
 list(FIND EXCLUDE_DIRS "build*" _build_star_idx)
 if(_build_star_idx EQUAL -1)
   list(APPEND EXCLUDE_DIRS "build*")
@@ -55,12 +72,14 @@ endif()
 # Helpers: formatting
 # --------------------------------------------------------------------------------
 function(psd_divider out_file)
-  file(APPEND "${out_file}" "===================================================================================================================================\n")
+  file(APPEND "${out_file}"
+       "===================================================================================================================================\n")
 endfunction()
 
 function(psd_file_header out_file rel_path)
   psd_divider("${out_file}")
-  file(APPEND "${out_file}" "=============================== FILE: ${rel_path} ===============================\n")
+  file(APPEND "${out_file}"
+       "=============================== FILE: ${rel_path} ===============================\n")
   psd_divider("${out_file}")
 endfunction()
 
@@ -69,22 +88,19 @@ endfunction()
 # --------------------------------------------------------------------------------
 function(psd_have_tree out_var)
   execute_process(
-    COMMAND bash -lc "command -v tree >/dev/null 2>&1"
+    COMMAND tree --version
     RESULT_VARIABLE _rv
     OUTPUT_QUIET
     ERROR_QUIET
   )
+  set(${out_var} FALSE PARENT_SCOPE)
   if(_rv EQUAL 0)
     set(${out_var} TRUE PARENT_SCOPE)
-  else()
-    set(${out_var} FALSE PARENT_SCOPE)
   endif()
 endfunction()
 
-# Build tree ignore string from EXCLUDE_DIRS.
-# tree -I supports wildcard patterns separated by '|'
 function(psd_build_tree_ignore out_var)
-  set(_ignore "Archive") # keep your original Archive exclusion
+  set(_ignore "Archive")
   foreach(p IN LISTS EXCLUDE_DIRS)
     list(APPEND _ignore "${p}")
   endforeach()
@@ -97,33 +113,44 @@ function(psd_write_project_tree out_file project_root)
   psd_have_tree(_have_tree)
 
   psd_divider("${out_file}")
-  file(APPEND "${out_file}" "==================================== PROJECT TREE ====================================\n")
+  file(APPEND "${out_file}"
+       "==================================== PROJECT TREE ====================================\n")
   psd_divider("${out_file}")
 
   if(_have_tree)
     psd_build_tree_ignore(_tree_ignore)
 
-    # IMPORTANT: ignore patterns come from EXCLUDE_DIRS (includes build* so build-wsl is excluded)
     execute_process(
-      COMMAND bash -lc "cd '${project_root}' && tree -a --dirsfirst -I '${_tree_ignore}'"
+      COMMAND tree -a --dirsfirst -I "${_tree_ignore}"
+      WORKING_DIRECTORY "${project_root}"
       OUTPUT_VARIABLE _tree_out
       OUTPUT_STRIP_TRAILING_WHITESPACE
       ERROR_VARIABLE _tree_err
       RESULT_VARIABLE _tree_rv
     )
 
+    file(APPEND "${PROJECT_ROOT}/ProjectSource-Debug.log"
+      "TREE available=TRUE\n"
+      "TREE result=${_tree_rv}\n"
+    )
+
     if(_tree_rv EQUAL 0)
       file(APPEND "${out_file}" "${_tree_out}\n\n")
     else()
-      file(APPEND "${out_file}" "tree execution failed (rv=${_tree_rv}).\n${_tree_err}\n\n")
+      file(APPEND "${out_file}"
+           "tree execution failed (rv=${_tree_rv}).\n${_tree_err}\n\n")
+      file(APPEND "${PROJECT_ROOT}/ProjectSource-Debug.log"
+           "TREE stderr:\n${_tree_err}\n")
     endif()
   else()
     file(APPEND "${out_file}" "tree is not installed. (Optional)\n\n")
+    file(APPEND "${PROJECT_ROOT}/ProjectSource-Debug.log"
+         "TREE available=FALSE\n")
   endif()
 endfunction()
 
 # --------------------------------------------------------------------------------
-# Helper: append a file by absolute path (used for CMakeLists.txt injection)
+# Helper: append file by absolute path
 # --------------------------------------------------------------------------------
 function(psd_append_file_abs out_file abs_path rel_label)
   if(EXISTS "${abs_path}")
@@ -134,7 +161,7 @@ function(psd_append_file_abs out_file abs_path rel_label)
 endfunction()
 
 # --------------------------------------------------------------------------------
-# File patterns to include (driven by INCLUDE_EXTENSIONS)
+# File patterns to include
 # --------------------------------------------------------------------------------
 set(PATTERNS "")
 foreach(ext IN LISTS INCLUDE_EXTENSIONS)
@@ -143,8 +170,7 @@ foreach(ext IN LISTS INCLUDE_EXTENSIONS)
 endforeach()
 
 # --------------------------------------------------------------------------------
-# Collect candidate files (RAW, UNTRUSTED LIST)
-# Note: CONFIGURE_DEPENDS is NOT allowed in script mode (-P)
+# Collect candidate files
 # --------------------------------------------------------------------------------
 set(ALL_FILES "")
 foreach(p IN LISTS PATTERNS)
@@ -155,42 +181,30 @@ foreach(p IN LISTS PATTERNS)
 endforeach()
 
 # --------------------------------------------------------------------------------
-# HARD EXCLUSIONS (single authoritative pass)
-# Convert EXCLUDE_DIRS into robust path-segment filters.
-# - For prefix patterns like build*: exclude any dir segment starting with "build"
-# - For exact patterns like engines: exclude any dir segment equal to "engines"
+# HARD EXCLUSIONS
 # --------------------------------------------------------------------------------
 foreach(pattern IN LISTS EXCLUDE_DIRS)
   if(pattern MATCHES "\\*$")
     string(REPLACE "*" "" prefix "${pattern}")
-
-    # Escape regex metacharacters we might realistically see.
     string(REPLACE "." "\\\\." prefix_esc "${prefix}")
     string(REPLACE "-" "\\\\-" prefix_esc "${prefix_esc}")
-
-    # Exclude anywhere in the path: (^|/)prefix[^/]*/
     list(FILTER ALL_FILES EXCLUDE REGEX "(^|/)${prefix_esc}[^/]*/")
   else()
     set(exact "${pattern}")
     string(REPLACE "." "\\\\." exact_esc "${exact}")
     string(REPLACE "-" "\\\\-" exact_esc "${exact_esc}")
-
-    # Exclude anywhere in the path: (^|/)exact/
     list(FILTER ALL_FILES EXCLUDE REGEX "(^|/)${exact_esc}/")
   endif()
 endforeach()
 
-# --------------------------------------------------------------------------------
-# Exclude output file itself
-# --------------------------------------------------------------------------------
 list(REMOVE_ITEM ALL_FILES "Project-Source.txt")
-
-# --------------------------------------------------------------------------------
-# Normalize list
-# --------------------------------------------------------------------------------
 list(REMOVE_DUPLICATES ALL_FILES)
 list(SORT ALL_FILES)
 list(LENGTH ALL_FILES FILE_COUNT)
+
+file(APPEND "${PROJECT_ROOT}/ProjectSource-Debug.log"
+  "ALL_FILES count=${FILE_COUNT}\n"
+)
 
 # --------------------------------------------------------------------------------
 # Header
@@ -203,17 +217,19 @@ file(APPEND "${OUT_FILE}" "Excluded dirs: ${EXCLUDE_DIRS}\n")
 file(APPEND "${OUT_FILE}" "File count: ${FILE_COUNT}\n\n")
 
 # --------------------------------------------------------------------------------
-# Project tree section (runs BEFORE file content so it appears near the top)
+# Project tree
 # --------------------------------------------------------------------------------
 psd_write_project_tree("${OUT_FILE}" "${PROJECT_ROOT}")
 
 # --------------------------------------------------------------------------------
-# Always include CMakeLists.txt explicitly (not matched by PATTERNS)
+# Always include CMakeLists.txt explicitly
 # --------------------------------------------------------------------------------
-psd_append_file_abs("${OUT_FILE}" "${PROJECT_ROOT}/CMakeLists.txt" "CMakeLists.txt")
+psd_append_file_abs("${OUT_FILE}"
+                    "${PROJECT_ROOT}/CMakeLists.txt"
+                    "CMakeLists.txt")
 
 # --------------------------------------------------------------------------------
-# FINAL SAFETY NET + WRITE
+# Write file contents
 # --------------------------------------------------------------------------------
 foreach(f IN LISTS ALL_FILES)
   set(abs "${PROJECT_ROOT}/${f}")

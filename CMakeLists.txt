@@ -4,7 +4,7 @@
 # Project: ProjectSourceDoc
 # @brief   Project CMake file
 # @authors Jeffrey Scott Flesher with the help of AI: Copilot
-# @date    2026-03-31
+# @date    2026-04-02
 # --------------------------------------------------------------------------------------------------
 
 cmake_minimum_required(VERSION 3.25)
@@ -50,20 +50,25 @@ set(SOURCES
     src/main.cpp
     src/MainWindow.cpp
     src/MainWindowTheme.cpp
-    src/StatusBarQueue.cpp
     src/AppLogUtils.cpp
-    src/ProjectPaths.cpp
     src/EmbeddedDocs.cpp
+    src/StatusBarQueue.cpp
+    src/ProjectPaths.cpp
     src/ProjectSourceExporter.cpp
+    src/CMakeSourceParser.cpp
+    src/GitIgnoreMatcher.cpp
 )
 
 set(HEADERS
     src/MainWindow.h
-    src/StatusBarQueue.h
     src/AppLogUtils.h
-    src/ProjectPaths.h
     src/EmbeddedDocs.h
+    src/StatusBarQueue.h
+    src/ProjectPaths.h
     src/ProjectSourceExporter.h
+    src/CMakeSourceParser.h
+    src/GitIgnoreMatcher.h
+    src/ProjectNode.h
 )
 
 set(DOC_FILES
@@ -149,11 +154,13 @@ if(BUILD_TESTS)
         tests/ProjectSourceDocTests.cpp
         src/MainWindow.cpp
         src/MainWindowTheme.cpp
-        src/StatusBarQueue.cpp
         src/AppLogUtils.cpp
-        src/ProjectPaths.cpp
         src/EmbeddedDocs.cpp
+        src/StatusBarQueue.cpp
+        src/ProjectPaths.cpp
         src/ProjectSourceExporter.cpp
+        src/CMakeSourceParser.cpp
+        src/GitIgnoreMatcher.cpp
         resources/ProjectSourceDoc.qrc
     )
 
@@ -227,3 +234,7 @@ include(CPack)
 if(UNIX AND NOT APPLE)
     message(STATUS "AppImage packaging is handled externally by deploy.sh")
 endif()
+
+# --------------------------------------------------------------------------------------------------
+# End of cmake
+# --------------------------------------------------------------------------------------------------

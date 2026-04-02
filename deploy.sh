@@ -103,7 +103,18 @@ declare -gx ICON_SRC="resources/icons/light/app.svg";
 # @details Updated for Qt 6.10.2 to match Fedora 43 system Qt.
 ################################################################################
 declare -gx QT_VERSION="6.10.2";
-declare -gx QT_BASE="/opt/Qt";
+declare -gx QT_BASE
+if [[ -d "/opt/Qt" ]]; then
+    QT_BASE="/opt/Qt";
+elif [[ -d "${HOME}/Qt" ]]; then
+    QT_BASE="${HOME}/Qt";
+else
+    printf "Failed to find Qt in /opt/Qt or %s\n" "${HOME}/Qt";
+    exit 1;
+fi
+
+echo "Using Qt base: ${QT_BASE}"
+
 declare -gx QT_ARCH="gcc_64";
 declare -gx QT_ROOT="${QT_BASE}/${QT_VERSION}/${QT_ARCH}";
 declare -gx QT6_QMAKE="${QT_ROOT}/bin/qmake";
@@ -1761,7 +1772,7 @@ run_linuxdeploy()
     # ─────────────────────────────────────────────────────────────
     # ✅ FORCE SINGLE Qt
     # ─────────────────────────────────────────────────────────────
-    export QT_ROOT="/opt/Qt/6.10.2/gcc_64"
+    export QT_ROOT="${QT_BASE}/6.10.2/gcc_64"
     export QMAKE="${QT_ROOT}/bin/qmake"
     export PATH="${QT_ROOT}/bin:${PATH}"
     export LD_LIBRARY_PATH="${QT_ROOT}/lib"
@@ -1807,7 +1818,7 @@ print_banner()
 
 ################################################################################
 # @brief  Auto-detect a usable Qt root if the configured one is invalid.
-# @details Scans /opt/Qt/*/gcc_64 for qmake and picks the highest version
+# @details Scans ${QT_BASE}/*/gcc_64 for qmake and picks the highest version
 #          matching major.minor of QT_VERSION, falling back to the highest
 #          available Qt if no exact match is found.
 ################################################################################
@@ -1823,10 +1834,10 @@ detect_qt_root()
     fi
 
     local candidates;
-    mapfile -t candidates < <(find /opt/Qt -maxdepth 2 -type d -name "gcc_64" 2>/dev/null | sort)
+    mapfile -t candidates < <(find "${QT_BASE}" -maxdepth 2 -type d -name "gcc_64" 2>/dev/null | sort)
 
     if [[ "${#candidates[@]}" -eq 0 ]]; then
-        fail "No Qt gcc_64 installations found under /opt/Qt. Install Qt 6.10.2 via Maintenance Tool.";
+        fail "No Qt gcc_64 installations found under ${QT_BASE}. Install Qt 6.10.2 via Maintenance Tool.";
     fi
 
     local desired_major_minor;
@@ -1837,7 +1848,7 @@ detect_qt_root()
 
     for path in "${candidates[@]}"; do
         local base;
-        base="$(dirname "${path}")";              # /opt/Qt/6.10.2
+        base="$(dirname "${path}")";              # ${QT_BASE}/6.10.2
         local ver;
         ver="$(basename "${base}")";              # 6.10.2
 
@@ -1858,7 +1869,7 @@ detect_qt_root()
         QT_ROOT="${fallback}/gcc_64";
         warn "No exact Qt ${desired_major_minor}.x match found; using ${QT_VERSION} at ${QT_ROOT}";
     else
-        fail "No usable Qt installation with qmake found under /opt/Qt.";
+        fail "No usable Qt installation with qmake found under ${QT_BASE}.";
     fi
 
     pass "Qt auto-detection completed: QT_VERSION=${QT_VERSION}, QT_ROOT=${QT_ROOT}";
@@ -2087,6 +2098,46 @@ load_library_source()
 
 
 ################################################################################
+# @brief  check Qt update available
+################################################################################
+check_qt_update_available() 
+{
+    section "Checking for Qt Updates (local install)";
+
+    [[ -d "${QT_BASE}" ]] || {
+        warn "QT_BASE does not exist: ${QT_BASE}";
+        return 0;
+    }
+
+    local installed_versions
+    mapfile -t installed_versions < <(
+        find "${QT_BASE}" -maxdepth 1 -mindepth 1 -type d \
+        -printf '%f\n' \
+        | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+        | sort -V;
+    )
+
+    if [[ "${#installed_versions[@]}" -eq 0 ]]; then
+        warn "No Qt versions found under ${QT_BASE}";
+        return 0;
+    fi
+
+    local latest;
+    latest="${installed_versions[-1]}";
+
+    info "Installed Qt versions: ${installed_versions[*]}";
+    info "Current Qt version : ${QT_VERSION}";
+    info "Latest Qt version  : ${latest}";
+
+    if [[ "${latest}" != "${QT_VERSION}" ]]; then
+        warn "A newer Qt version is installed: ${latest}";
+        warn "Consider updating QT_VERSION to ${latest}";
+    else
+        pass "Qt is up to date (${QT_VERSION})";
+    fi
+}
+
+################################################################################
 # @brief  Install appdata.xml
 # @param  $@  Command-line arguments forwarded from the shell.
 ################################################################################
@@ -2110,12 +2161,249 @@ install_appdata()
 }
 
 ################################################################################
+# @brief Export project source tree if supported
+################################################################################
+export_project_source_tree()
+{
+    local root="$1"
+    local out="${root}/Project-Source.txt"
+
+    # Case 1: already exists
+    if [[ -f "${out}" ]]; then
+        echo "[INFO] Project source tree already present: ${out}"
+        return 0
+    fi
+
+    # Case 2: PackSource.cmake exists → can generate
+    if [[ -f "${root}/cmake/PackSource.cmake" ]]; then
+        echo "[INFO] Generating project source tree"
+        cmake -DPROJECT_ROOT="${root}" \
+              -P "${root}/cmake/PackSource.cmake" \
+              || {
+                  echo "[WARN] Source tree generation failed"
+                  return 0
+              }
+        return 0
+    fi
+
+    # Case 3: Not supported (NORMAL for most projects)
+    echo "[INFO] Project does not support source tree export (skipping)"
+    return 0
+}
+
+################################################################################
+# @brief Make AppImage executable and install it into the system menu
+################################################################################
+prompt_and_install_appimage()
+{
+    section "AppImage Installation"
+
+    local appimage="${DEPLOY_DIR}/${APP_NAME}-${APP_VERSION}-x86_64.AppImage"
+
+    if [[ ! -f "${appimage}" ]]; then
+        warn "AppImage not found: ${appimage}"
+        return 0
+    fi
+
+    # Ensure executable
+    if [[ ! -x "${appimage}" ]]; then
+        chmod +x "${appimage}" || fail "Failed to chmod +x ${appimage}"
+        pass "Marked AppImage executable"
+    fi
+
+    echo
+    read -rp "Do you want to install ${APP_NAME} to your system menu? [y/N]: " reply
+    echo
+
+    case "${reply}" in
+        y|Y|yes|YES) ;;
+        *)
+            info "Installation skipped by user"
+            return 0
+            ;;
+    esac
+
+    # Install location
+    local install_dir="${HOME}/Applications"
+    mkdir -p "${install_dir}"
+
+    local target; target="${install_dir}/$(basename "${appimage}")"
+    cp -f "${appimage}" "${target}" || fail "Failed to copy AppImage"
+    chmod +x "${target}"
+
+    pass "AppImage installed to ${install_dir}"
+
+    # ─────────────────────────────────────────────
+    # Create menu entry (ALWAYS)
+    # ─────────────────────────────────────────────
+    local desktop_dir="${HOME}/.local/share/applications"
+    mkdir -p "${desktop_dir}"
+
+    local desktop_file="${desktop_dir}/${APP_NAME}.desktop"
+
+    cat > "${desktop_file}" <<EOF
+[Desktop Entry]
+Type=Application
+Name=${APP_NAME}
+Exec=${target}
+Icon=${APP_NAME}
+Categories=Utility;Development;
+Terminal=false
+EOF
+
+    chmod 644 "${desktop_file}"
+
+    # Refresh menu cache (safe if tool is missing)
+    if command -v update-desktop-database &>/dev/null; then update-desktop-database "${desktop_dir}" >/dev/null 2>&1; fi
+
+    pass "Menu entry created: ${desktop_file}"
+
+    # Optional: inform about AppImageLauncher
+    if command -v appimagelauncher &>/dev/null; then
+        info "AppImageLauncher detected (may manage future AppImage updates)"
+    fi
+}
+
+################################################################################
+# @brief Install AppImageLauncher (robust, release-aware)
+################################################################################
+install_appimagelauncher()
+{
+    section "Installing AppImageLauncher"
+
+    # Already installed?
+    if command -v appimagelauncher &>/dev/null; then
+        pass "AppImageLauncher already installed"
+        return 0
+    fi
+
+    local bin_dir="${HOME}/.local/bin"
+    local api_url="https://api.github.com/repos/TheAssassin/AppImageLauncher/releases/latest"
+    local appimage_url
+    local appimage_path
+
+    mkdir -p "${bin_dir}"
+
+    info "Querying latest AppImageLauncher release metadata"
+
+    # Extract the first x86_64 AppImage URL
+    appimage_url="$(
+        curl -fsSL "${api_url}" \
+        | grep -Eo 'https://[^"]+AppImage' \
+        | grep -E 'x86_64|amd64' \
+        | head -n1
+    )"
+
+    if [[ -z "${appimage_url}" ]]; then
+        fail "Could not locate AppImageLauncher AppImage in latest release"
+    fi
+
+    appimage_path="${bin_dir}/$(basename "${appimage_url}")"
+
+    info "Downloading AppImageLauncher:"
+    info "  ${appimage_url}"
+
+    curl -fL -o "${appimage_path}" "${appimage_url}" \
+        || fail "Failed to download AppImageLauncher"
+
+    chmod +x "${appimage_path}"
+
+    # Stable wrapper name
+    ln -sf "${appimage_path}" "${bin_dir}/appimagelauncher"
+
+    # Ensure ~/.local/bin is usable now
+    if ! command -v appimagelauncher &>/dev/null; then
+        export PATH="${bin_dir}:${PATH}"
+    fi
+
+    info "Running AppImageLauncher once to enable menu integration"
+    "${appimage_path}" >/dev/null 2>&1 || true
+
+    pass "AppImageLauncher installed successfully"
+}
+
+################################################################################
+# @brief install OS dependencies
+################################################################################
+install_os_dependencies()
+{
+    section "Installing OS Dependencies";
+
+    # Tools required by ProjectSourceDoc
+    local deps=(tree cmake ninja curl pkg-config file git);
+
+    # Detect WSL (informational only)
+    if grep -qi microsoft /proc/version 2>/dev/null; then
+        info "Running under Windows WSL";
+    fi
+
+    # Determine missing tools
+    local missing=();
+    for pkg in "${deps[@]}"; do
+        if ! command -v "${pkg}" &>/dev/null; then
+            missing+=("${pkg}");
+        fi
+    done
+
+    if [[ "${#missing[@]}" -eq 0 ]]; then
+        pass "All required OS dependencies are already installed";
+        return 0;
+    fi
+
+    warn "Missing dependencies: ${missing[*]}";
+
+    # ─────────────────────────────────────────────
+    # Linux (native + WSL)
+    # ─────────────────────────────────────────────
+    if [[ "$(uname -s)" == "Linux" ]]; then
+        if command -v apt-get &>/dev/null; then
+            sudo apt-get update;
+            sudo apt-get install -y "${missing[@]}";
+
+        elif command -v dnf &>/dev/null; then
+            sudo dnf install -y "${missing[@]}";
+
+        elif command -v yum &>/dev/null; then
+            sudo yum install -y "${missing[@]}";
+
+        elif command -v pacman &>/dev/null; then
+            sudo pacman -S --needed --noconfirm "${missing[@]}";
+
+        elif command -v zypper &>/dev/null; then
+            sudo zypper install -y "${missing[@]}";
+
+        elif command -v apk &>/dev/null; then
+            sudo apk add "${missing[@]}";
+
+        else
+            fail "Unsupported Linux distribution — install manually: ${missing[*]}";
+        fi
+
+    # ─────────────────────────────────────────────
+    # macOS
+    # ─────────────────────────────────────────────
+    elif [[ "$(uname -s)" == "Darwin" ]]; then
+        if ! command -v brew &>/dev/null; then
+            fail "Homebrew not found. Install from https://brew.sh first.";
+        fi
+        brew install "${missing[@]}";
+
+    # ─────────────────────────────────────────────
+    # Unsupported
+    # ─────────────────────────────────────────────
+    else
+        fail "Unsupported OS: $(uname -s)";
+    fi
+
+    pass "OS dependencies installed successfully";
+}
+
+################################################################################
 # @brief  Main entry point — orchestrates all deployment stages.
 # @param  $@  Command-line arguments forwarded from the shell.
 ################################################################################
 main()
 {
-
     # ── bootstrap MUST be first ──────────────────────────────────────────────
     bootstrap_log "$@";
     parse_args "$@";
@@ -2141,9 +2429,12 @@ main()
 
     # ── environment + build prep ─────────────────────────────────────────────
     detect_os;
+    install_os_dependencies;
+    install_appimagelauncher;
     init_dirs;
     check_host_tools;
-    detect_qt_root;              # NEW: auto-detect Qt if QT_ROOT invalid
+    detect_qt_root;
+    check_qt_update_available;
     check_qt_installation;
     check_cmake_file;
     check_for_update;
@@ -2211,16 +2502,19 @@ main()
         fi
 
         finalise_output;
+        prompt_and_install_appimage;
         print_summary;
 
     elif [[ "${OS}" == "mac" ]]; then
         run_macdeployqt;
         finalise_output;
+        prompt_and_install_appimage;
         print_summary;
 
     else
         warn "Windows deployment is not automated. See deploy.sh comments.";
         finalise_output;
+        prompt_and_install_appimage;
         print_summary;
     fi
 }
