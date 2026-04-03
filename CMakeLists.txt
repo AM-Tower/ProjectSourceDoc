@@ -207,10 +207,6 @@ install(TARGETS ProjectSourceDoc
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
-install(DIRECTORY cmake/
-    DESTINATION share/${PROJECT_NAME}/cmake
-)
-
 install(FILES resources/icons/light/app.svg
     DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/scalable/apps
     RENAME ProjectSourceDoc.svg
