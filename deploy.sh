@@ -2100,7 +2100,7 @@ load_library_source()
 ################################################################################
 # @brief  check Qt update available
 ################################################################################
-check_qt_update_available() 
+check_qt_update_available()
 {
     section "Checking for Qt Updates (local install)";
 
@@ -2171,18 +2171,6 @@ export_project_source_tree()
     # Case 1: already exists
     if [[ -f "${out}" ]]; then
         echo "[INFO] Project source tree already present: ${out}"
-        return 0
-    fi
-
-    # Case 2: PackSource.cmake exists → can generate
-    if [[ -f "${root}/cmake/PackSource.cmake" ]]; then
-        echo "[INFO] Generating project source tree"
-        cmake -DPROJECT_ROOT="${root}" \
-              -P "${root}/cmake/PackSource.cmake" \
-              || {
-                  echo "[WARN] Source tree generation failed"
-                  return 0
-              }
         return 0
     fi
 
