@@ -47,7 +47,7 @@ namespace psd::log
      * ****************************************************************************************************************************
      * @brief   Appends text to a QTextEdit output console.
      *****************************************************************************************************************************/
-    void logAppend(QTextEdit *output, const QString &text)
+    void logAppend(QPlainTextEdit *output, const QString &text)
     {
         if (!output) return;
 

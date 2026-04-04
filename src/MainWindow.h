@@ -1,32 +1,34 @@
 /*!
  * ********************************************************************************************************************************
- * @file         MainWindow.h
- * @brief        Declares the main application window for ProjectSource.
- * @details      MainWindow owns and orchestrates the entire Qt Widgets UI for the ProjectSource
- * application.
+ * @file        MainWindow.h
+ * @brief       Declares the main application window for ProjectSource.
+ * @details     MainWindow owns and orchestrates the entire Qt Widgets UI for the ProjectSource
+ *              application.
  *
- *               Responsibilities include:
- *               - File menu (Open project, Open Recent, Exit)
- *               - Tools menu (Create Project‑Source.txt)
- *               - Help menu (Usage, About)
- *               - Central tabs (Log + Settings)
+ *              Responsibilities include:
+ *              - File menu (Open project, Open Recent, Exit)
+ *              - Tools menu (Create Project‑Source.txt)
+ *              - Help menu (Usage, About)
+ *              - Central tabs (Log + Settings)
  *
- *               The Settings tab supports:
- *               - Editable project folder list (per‑project selection)
- *               - Include file extensions (comma/space/semicolon separated)
- *               - Exclude folder patterns with browse support
- *               - Backup base folder selection with timestamped backups
+ *              The Settings tab supports:
+ *              - Editable project folder list (per‑project selection)
+ *              - Include file extensions (comma/space/semicolon separated)
+ *              - Exclude folder patterns with browse support
+ *              - Backup base folder selection with timestamped backups
  *
- *               All per‑project settings are persisted using QSettings and applied when generating
- * Project‑Source.txt and performing project backups.
+ *              All per‑project settings are persisted using QSettings and applied when generating
+ *              Project‑Source.txt and performing project backups.
  *
- * @author       Jeffrey Scott Flesher
- * @date         2026-04-02
+ * @authors     Jeffrey Scott Flesher with the help of AI: Copilot
+ * @date        2026-04-04
  *********************************************************************************************************************************/
 #pragma once
 
+#include <QLabel>
 #include <QLineEdit>
 #include <QMainWindow>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QString>
 #include <QStringList>
@@ -37,121 +39,79 @@ class QListWidget;
 class QMenu;
 class QProgressBar;
 class QTabWidget;
-class QTextEdit;
 class QToolBar;
 class StatusBarQueue;
 class QActionGroup;
+class QCloseEvent;
 
-
-static constexpr const char *kSettingsThemeMode = "ui/themeMode";
+static constexpr const char *kSettingsThemeMode = "ui/themeMode"; ///< Settings key for persisted theme mode
 
 /*!
  * ********************************************************************************************************************************
- * @brief  Theme Mode
+ * @brief Theme Mode
  *********************************************************************************************************************************/
 enum class ThemeMode
 {
-    System,
-    Light,
-    Dark
+    System, ///< Follow the operating system theme
+    Light,  ///< Force light application theme
+    Dark    ///< Force dark application theme
 };
 
 /*!
  * ********************************************************************************************************************************
- * @class        MainWindow
- * @brief        Primary GUI window for the ProjectSource application.
+ * @class MainWindow
+ * @brief Primary GUI window for the ProjectSource application.
  *
- * @details      MainWindow is responsible for all user‑facing interactions and delegates project
- * source generation and backup logic to ProjectSourceExporter.
- *
- *               This class owns:
- *               - Application menus and toolbar
- *               - Log display and progress UI
- *               - Settings tab and persistence
+ * @details MainWindow is responsible for all user‑facing interactions and delegates project
+ *          source generation and backup logic to ProjectSourceExporter.
  *
  * @public
  *********************************************************************************************************************************/
 class MainWindow final : public QMainWindow
 {
         Q_OBJECT
-
         friend class ProjectSourceDocTests;
 
     public:
-        /*!
-         * ****************************************************************************************************************************
-         * @brief        Construct the main application window.
-         * @param        parent  Optional parent widget.
-         ****************************************************************************************************************************/
+        //! Construct the main application window.
         explicit MainWindow(QWidget *parent = nullptr);
 
-        /*!
-         * ****************************************************************************************************************************
-         * @brief        Destructor for MainWindow.
-         ****************************************************************************************************************************/
+        //! Destructor for MainWindow.
         ~MainWindow() override;
 
     protected:
-        /*!
-         * ****************************************************************************************************************************
-         * @brief        Handle theme and language changes.
-         * @param        event  The change event.
-         ****************************************************************************************************************************/
+        //! Handle theme and language changes.
         void changeEvent(QEvent *event) override;
 
+        //! Persist window geometry and state on close.
+        void closeEvent(QCloseEvent *event) override;
+
     private slots:
-        /*!
-         * ****************************************************************************************************************************
-         * @brief        Triggered when the user selects "Open Project".
-         ****************************************************************************************************************************/
+        //! Triggered when the user selects "Open Project".
         void onOpenTriggered();
 
-        /*!
-         * ****************************************************************************************************************************
-         * @brief        Triggered when the user selects "Create Project‑Source.txt".
-         ****************************************************************************************************************************/
+        //! Triggered when the user selects "Create Project‑Source.txt".
         void onProjectSourceTriggered();
 
-        /*!
-         * ****************************************************************************************************************************
-         * @brief        Triggered when the user selects a recent project.
-         ****************************************************************************************************************************/
+        //! Triggered when the user selects a recent project.
         void onOpenRecentTriggered();
 
-        /*!
-         * ****************************************************************************************************************************
-         * @brief        Clears the recent project list.
-         ****************************************************************************************************************************/
+        //! Clears the recent project list.
         void onClearRecentTriggered();
 
-        /*!
-         * ****************************************************************************************************************************
-         * @brief        Browse for a project folder to add to the settings tab.
-         ****************************************************************************************************************************/
+        //! Browse for a project folder to add to the settings tab.
         void onBrowseProjectFolder();
 
-        /*!
-         * ****************************************************************************************************************************
-         * @brief        Remove the selected project folder from the settings tab.
-         ****************************************************************************************************************************/
+        //! Remove the selected project folder from the settings tab.
         void onRemoveProjectFolder();
 
-        /*!
-         * ****************************************************************************************************************************
-         * @brief        Browse for an exclude folder pattern.
-         ****************************************************************************************************************************/
+        //! Browse for an exclude folder pattern.
         void onBrowseExcludeFolder();
 
-        /*!
-         * ****************************************************************************************************************************
-         * @brief        Remove the selected exclude folder entry.
-         ****************************************************************************************************************************/
+        //! Remove the selected exclude folder entry.
         void onRemoveExcludeFolder();
 
-        /*!
-         * ****************************************************************************************************************************
-         * @brief   Show the About dialog.
-         *****************************************************************************************************************************/
+        //! Show the About dialog.
         void showAboutDialog();
 
     private:
@@ -202,73 +162,34 @@ class MainWindow final : public QMainWindow
         //! Refresh UI elements after theme changes.
         void refreshThemeUi();
 
-        /*!
-         * ****************************************************************************************************************************
-         * @brief Apply the system (default) theme.
-         *
-         * Clears any application-level palette or stylesheet overrides and restores the
-         * platform’s default style and palette. When selected, the application follows
-         * the operating system’s appearance (light/dark) automatically.
-         *
-         * This function triggers a palette change, which causes theme-aware icons and UI
-         * elements to refresh via existing event handlers.
-         *****************************************************************************************************************************/
+        //! Apply the system (default) theme.
         void applySystemTheme();
 
-        /*!
-         * ****************************************************************************************************************************
-         * @brief Apply a forced light theme.
-         *
-         * Applies a light application palette suitable for bright UI environments.
-         * This overrides the system theme until changed by the user.
-         *
-         * Theme-aware icons and widgets are refreshed automatically through palette
-         * change events.
-         *****************************************************************************************************************************/
+        //! Apply a forced light theme.
         void applyLightTheme();
 
-        /*!
-         * ****************************************************************************************************************************
-         * @brief Apply a forced dark theme.
-         *
-         * Applies a dark application palette designed for low-light environments.
-         * This overrides the system theme until changed by the user.
-         *
-         * Theme-aware icons and widgets are refreshed automatically through palette
-         * change events.
-         *****************************************************************************************************************************/
+        //! Apply a forced dark theme.
         void applyDarkTheme();
 
-        /*!
-         * ****************************************************************************************************************************
-         * @brief Save the selected theme mode to persistent settings.
-         * @param mode Selected theme mode.
-         *****************************************************************************************************************************/
+        //! Save the selected theme mode to persistent settings.
         void saveThemeMode(ThemeMode mode);
 
-        /*!
-         * ********************************************************************************************************************************
-         * @brief Restore the persisted theme mode from settings.
-         *          * Defaults to system theme if no value is stored.
-         * *******************************************************************************************************************************/
+        //! Restore the persisted theme mode from settings.
         void restoreThemeMode();
 
-        /*!
-         * ****************************************************************************************************************************
-         * @brief Update the Theme menu checkmarks to match the specified theme mode.
-         * @param mode Theme mode that should appear selected in the menu.
-         *****************************************************************************************************************************/
+        //! Update the Theme menu checkmarks to match the specified theme mode.
         void updateThemeMenuChecks(ThemeMode mode);
 
-        /*! ******************************************************************************************************************************
-         * @brief       Loads and analyzes a project folder at runtime.
-         * @param[in]   projectRoot Absolute path to the selected project.
-         ******************************************************************************************************************************* */
-        void loadProjectTree(const QString& projectRoot);
-        /*!
-         * ********************************************************************************************************************************
-         * @brief   setActiveProject
-         *********************************************************************************************************************************/
+        //! Restore persisted window geometry and state.
+        void restoreWindowState();
+
+        //! Persist window geometry and state.
+        void saveWindowState() const;
+
+        //! Loads and analyzes a project folder at runtime.
+        void loadProjectTree(const QString &projectRoot);
+
+        //! Set the currently active project.
         void setActiveProject(const QString &projectRoot, bool updateSettingsSelection);
 
         /* --------------------------- Settings Tab --------------------------- */
@@ -306,89 +227,55 @@ class MainWindow final : public QMainWindow
         //! Default excluded directories.
         static QStringList defaultExcludeDirs();
 
-        //! @brief Extract exclude directory patterns from a project's .gitignore file.
+        //! Extract exclude directory patterns from a project's .gitignore file.
         static QStringList excludeDirsFromGitignore(const QString &projectRoot);
 
     private:
         /* --------------------------- Core Members --------------------------- */
-        QTabWidget     *m_tabs{nullptr};
-        StatusBarQueue *m_statusQueue{nullptr};
-        QTextEdit      *m_logView{nullptr};
-        QProgressBar   *m_logProgress{nullptr};
-        bool            m_logResetPending{false};
 
-        QString m_openProjectRoot;
-        QString m_currentLogFilePath;
-        // Always points to the currently active project
-        QString m_activeProjectRoot;
+        QTabWidget *m_tabs{nullptr};            ///< Main tab widget containing Log and Settings tabs
+        StatusBarQueue *m_statusQueue{nullptr}; ///< Queued status bar message handler
+        QPlainTextEdit *m_logView{nullptr};     ///< Log output text view
+        QProgressBar *m_logProgress{nullptr};   ///< Progress indicator for log operations
+        bool m_logResetPending{false};          ///< Indicates a pending log reset
+        QString m_openProjectRoot;              ///< Root path of the opened project
+        QString m_currentLogFilePath;           ///< Currently displayed log file path
+        QString m_activeProjectRoot;            ///< Currently active project root path
 
-        QAction *m_openAction{nullptr};
-        QAction *m_projectSourceAction{nullptr};
-        QAction *m_exitAction{nullptr};
-        QAction *m_usageAction{nullptr};
-        QAction *m_aboutAction{nullptr};
-        QAction *m_clearRecentAction{nullptr};
+        QAction *m_openAction{nullptr};          ///< Open project action
+        QAction *m_projectSourceAction{nullptr}; ///< Create Project‑Source.txt action
+        QAction *m_exitAction{nullptr};          ///< Exit application action
+        QAction *m_usageAction{nullptr};         ///< Usage/help action
+        QAction *m_aboutAction{nullptr};         ///< About dialog action
+        QAction *m_clearRecentAction{nullptr};   ///< Clear recent projects action
 
-        /*!
-         * ****************************************************************************************************************************
-         * @brief Action to follow the system theme.
-         *
-         * When selected, clears all application palette overrides and allows the
-         * operating system to control the application’s appearance.
-         *****************************************************************************************************************************/
-        QAction *m_themeSystemAction{nullptr};
+        QAction *m_themeSystemAction{nullptr}; ///< System theme selection action
+        QAction *m_themeLightAction{nullptr};  ///< Light theme selection action
+        QAction *m_themeDarkAction{nullptr};   ///< Dark theme selection action
+        QActionGroup *m_themeGroup{nullptr};   ///< Exclusive theme action group
 
-        /*!
-         * ****************************************************************************************************************************
-         * @brief Action to force a light theme.
-         *
-         * Applies a light palette regardless of system appearance.
-         *****************************************************************************************************************************/
-        QAction *m_themeLightAction{nullptr};
-
-        /*!
-         * ****************************************************************************************************************************
-         * @brief Action to force a dark theme.
-         *
-         * Applies a dark palette regardless of system appearance.
-         *****************************************************************************************************************************/
-        QAction *m_themeDarkAction{nullptr};
-
-        /*!
-         * ****************************************************************************************************************************
-         * @brief Exclusive action group for theme selection.
-         *
-         * Ensures that only one theme option (System, Light, or Dark) can be active
-         * at a time in the Tools → Theme menu.
-         *****************************************************************************************************************************/
-        QActionGroup *m_themeGroup{nullptr};
-
-        QString m_platformStyleName;
-
-        QMenu *m_recentMenu{nullptr};
-        QToolBar *m_toolbar{nullptr};
-
-        QStringList m_recentProjects;
+        QString m_platformStyleName;  ///< Name of the platform style in use
+        QMenu *m_recentMenu{nullptr}; ///< Recent projects menu
+        QToolBar *m_toolbar{nullptr}; ///< Main application toolbar
+        QStringList m_recentProjects; ///< List of recently opened projects
 
         /* --------------------------- Settings Tab Widgets --------------------------- */
-        QWidget     *m_settingsTab{nullptr};
-        QListWidget *m_projectFoldersList{nullptr};
-        QPushButton *m_addProjectFolderBtn{nullptr};
-        QPushButton *m_removeProjectFolderBtn{nullptr};
 
-        QLineEdit   *m_includeExtEdit{nullptr};
-        QListWidget *m_excludeFoldersList{nullptr};
-        QPushButton *m_addExcludeBrowseBtn{nullptr};
-        QPushButton *m_removeExcludeBtn{nullptr};
-
-        QLineEdit   *m_backupFolderEdit{nullptr};
-        QPushButton *m_backupBrowseBtn{nullptr};
-
-        QString m_settingsSelectedProject;
+        QWidget *m_settingsTab{nullptr};                ///< Settings tab container widget
+        QListWidget *m_projectFoldersList{nullptr};     ///< List of project folders
+        QPushButton *m_addProjectFolderBtn{nullptr};    ///< Add project folder button
+        QPushButton *m_removeProjectFolderBtn{nullptr}; ///< Remove project folder button
+        QLineEdit *m_includeExtEdit{nullptr};           ///< Include extensions input
+        QListWidget *m_excludeFoldersList{nullptr};     ///< Excluded folders list
+        QPushButton *m_addExcludeBrowseBtn{nullptr};    ///< Browse exclude folder button
+        QPushButton *m_removeExcludeBtn{nullptr};       ///< Remove exclude folder button
+        QLineEdit *m_backupFolderEdit{nullptr};         ///< Backup base folder input
+        QPushButton *m_backupBrowseBtn{nullptr};        ///< Browse backup folder button
+        QString m_settingsSelectedProject;              ///< Currently selected settings project
+        QLabel *m_cursorPosLabel{nullptr};              ///< Cursor position status label
 };
 
 /*!
  * ********************************************************************************************************************************
- * @file         MainWindow.h
- * @brief        End of MainWindow.h.
+ * @brief End of MainWindow.h
  *********************************************************************************************************************************/

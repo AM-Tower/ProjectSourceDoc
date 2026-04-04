@@ -8,8 +8,8 @@
  *               MainWindow orchestrates user interaction only and delegates all generation and
  *               backup logic to ProjectSourceExporter.
  *
- * @author       Jeffrey Scott Flesher
- * @date         2026-04-02
+ * @author       Jeffrey Scott Flesher with AI: Copilot
+ * @date         2026-04-04
  *********************************************************************************************************************************/
 
 #include "MainWindow.h"
@@ -43,6 +43,9 @@
 #include <QSignalBlocker>
 #include <QStyle>
 #include <QStandardItemModel>
+#include <LineNumberPlainTextEdit.h>
+#include <QGuiApplication>
+#include <QScreen>
 
 #include "AboutDialog.h"
 #include "AppLogUtils.h"
@@ -60,18 +63,16 @@ static constexpr const char *kSettingsProjectFolders = "ui/projectFolders";
 static constexpr int kMaxRecentProjects = 10;
 
 /*!
- * ********************************************************************************************************************************
- * @brief        Constructs the main application window.
- *********************************************************************************************************************************/
+ * ****************************************************************************************************************************
+ * @brief Constructs the main application window.
+ *****************************************************************************************************************************/
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 {
     setWindowTitle(tr("ProjectSource"));
     resize(1100, 700);
     psd::log::clearLogFilesAtStartup();
-
     // Capture the platform default style name before we ever force Fusion.
     m_platformStyleName = qApp->style()->objectName();
-
     loadRecentProjects();
     createActions();
     createMenus();
@@ -79,6 +80,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     createTabs();
     createStatusBar();
     restoreThemeMode();
+    restoreWindowState();
 }
 
 /*!
@@ -86,6 +88,73 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
  * @brief        Destroys the main application window.
  *********************************************************************************************************************************/
 MainWindow::~MainWindow() = default;
+
+/*!
+ * ****************************************************************************************************************************
+ * @brief   Restore persisted window geometry and state.
+ *****************************************************************************************************************************/
+void MainWindow::restoreWindowState()
+{
+    QSettings settings;
+
+    const QByteArray geometry = settings.value(QStringLiteral("ui/windowGeometry")).toByteArray();
+    const QByteArray state = settings.value(QStringLiteral("ui/windowState")).toByteArray();
+    const bool wasMaximized = settings.value(QStringLiteral("ui/windowMaximized"), false).toBool();
+
+    if (!geometry.isEmpty()) restoreGeometry(geometry);
+    if (!state.isEmpty()) restoreState(state);
+
+    // Ensure the restored window is visible on at least one screen
+    QRect frame = frameGeometry();
+    bool onScreen = false;
+
+    for (QScreen *screen : QGuiApplication::screens())
+    {
+        if (screen->availableGeometry().intersects(frame))
+        {
+            onScreen = true;
+            break;
+        }
+    }
+
+    if (!onScreen)
+    {
+        // Fallback: center on primary screen with a reasonable size
+        QScreen *primary = QGuiApplication::primaryScreen();
+        if (primary)
+        {
+            const QRect avail = primary->availableGeometry();
+            resize(avail.size() * 0.75);
+            move(avail.center() - rect().center());
+        }
+    }
+
+    if (wasMaximized) showMaximized();
+}
+
+/*!
+ * ****************************************************************************************************************************
+ * @brief   Persist window geometry and state.
+ *****************************************************************************************************************************/
+void MainWindow::saveWindowState() const
+{
+    QSettings settings;
+    settings.setValue(QStringLiteral("ui/windowMaximized"), isMaximized());
+    // Only save normal geometry when not maximized
+    if (!isMaximized()) { settings.setValue(QStringLiteral("ui/windowGeometry"), saveGeometry()); }
+    settings.setValue(QStringLiteral("ui/windowState"), saveState());
+}
+
+/*!
+ * ****************************************************************************************************************************
+ * @brief   Persist window state before closing.
+ * @param   event Close event.
+ *****************************************************************************************************************************/
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    saveWindowState();
+    QMainWindow::closeEvent(event);
+}
 
 /*!
  * ********************************************************************************************************************************
@@ -319,15 +388,29 @@ void MainWindow::createTabs()
     m_logProgress->setRange(0, 100);
     layout->addWidget(m_logProgress);
 
-    m_logView = new QTextEdit(logTab);
+    m_logView = new LineNumberPlainTextEdit(logTab);
     m_logView->setReadOnly(true);
-    m_logView->setLineWrapMode(QTextEdit::NoWrap);
-    layout->addWidget(m_logView, 1);
+    m_logView->setWordWrapMode(QTextOption::NoWrap);
+    m_logView->setUndoRedoEnabled(false);
 
+    layout->addWidget(m_logView, 1);
     m_tabs->addTab(logTab, themedIcon("log"), tr("Log"));
 
     /* ---------------------------- Settings tab ---------------------------- */
     createSettingsTab();
+
+    /* -------------------- Cursor position → status bar -------------------- */
+    connect(m_logView, &QPlainTextEdit::cursorPositionChanged, this,
+            [this]()
+            {
+                if (!m_cursorPosLabel) return;
+
+                QTextCursor cursor = m_logView->textCursor();
+                const int line = cursor.blockNumber() + 1;
+                const int column = cursor.positionInBlock() + 1;
+
+                m_cursorPosLabel->setText(tr("Ln %1, Col %2").arg(line).arg(column));
+            });
 }
 
 /*!
@@ -338,6 +421,18 @@ void MainWindow::createStatusBar()
 {
     m_statusQueue = new StatusBarQueue(statusBar(), this);
     m_statusQueue->enqueue(tr("Ready"), 2);
+
+    m_cursorPosLabel = new QLabel(tr("Ln 1, Col 1"), this);
+
+    // Ensure stable width so the label never touches the right edge
+    // and does not resize as line/column numbers grow.
+    const QFontMetrics fm(m_cursorPosLabel->font());
+    const int padding = fm.horizontalAdvance(QLatin1Char(' ')) * 2;
+    const int minWidth = fm.horizontalAdvance(QStringLiteral("Ln 99999, Col 999")) + padding;
+
+    m_cursorPosLabel->setMinimumWidth(minWidth);
+
+    statusBar()->addPermanentWidget(m_cursorPosLabel);
 }
 
 /*!
@@ -1012,8 +1107,8 @@ void MainWindow::onProjectSourceTriggered()
 
     if (!procLog.trimmed().isEmpty() && m_logView)
     {
-        m_logView->append(tr("\n==================== [Project Source Output] ====================\n"));
-        m_logView->append(procLog);
+        appendToLog(tr("\n==================== [Project Source Output] ====================\n"));
+        appendToLog(procLog);
     }
 
     if (outPath.isEmpty())

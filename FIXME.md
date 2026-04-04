@@ -1,1 +1,1 @@
-Check if Settings backup folder is empty, if so, make tab active and show statusbar to update it.
+List all bugs and features here:

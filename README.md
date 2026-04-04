@@ -168,7 +168,17 @@ One time:
     git add VERSION; git commit -m "Add VERSION file"; git push origin main
 
 ---
+## Age Verification Disclaimer
 
+This application does **not** require age verification.
+
+The app does not provide age-restricted content, does not offer regulated services, and is not designed or marketed exclusively for adults. Based on its functionality and intended use, no age-gating or age-verification mechanisms are required.
+
+This application operates as a native, non-web-based product and does not expose users to content or features that would reasonably necessitate age verification under common regulatory frameworks.
+
+Please note that legal requirements may vary by jurisdiction. Users and distributors are responsible for ensuring compliance with any local laws or regulations that may apply in their region.
+
+---
 ## License
 
 Copyright 2026
@@ -185,5 +195,4 @@ Jeffrey Scott Flesher
 Created with the assistance of Microsoft Copilot and iterative AI tooling.
 
 ---
-
 End of README.md

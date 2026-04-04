@@ -297,7 +297,7 @@ usage()
     else
         printf "%b --backup      Run project backup %b \n" "${CYAN}" "${NC}";
     fi
-    printf "%b --gitinit     Create a local git repo. Clean install deletes folder if exists  %b \n" "${CYAN}" "${NC}";
+    printf "%b --git-init     Create a local git repo. Clean install deletes folder if exists  %b \n" "${CYAN}" "${NC}";
     printf "%b --trace       Show trace messages %b \n" "${CYAN}" "${NC}";
     printf "%b --final       Increment Version %b \n" "${CYAN}" "${NC}";
     printf "%b --reset       Reset Version %b \n" "${CYAN}" "${NC}";
@@ -397,16 +397,17 @@ parse_args()
 {
     for arg in "$@"; do
         case "${arg}" in
-            --final)       SWITCH_FINAL=1; ;;
-            --reset)       SWITCH_RESET=1; ;;
-            --version=*)   SWITCH_NEW_VERSION="${arg#*=}"; ;;
-            --github)      SWITCH_GITHUB=1; ;;
-            --skip-tests)  SKIP_TESTS=1; ;;
-            --appdir-only) run_mode=0; ;;
-            --git-init)    SWITCH_GIT_INIT=1; ;;
-            --backup)      SWITCH_BACKUP=1; ;;
-            --trace)       SWITCH_TRACE=1; ;;
-            --help)        usage; ;;
+            --final)        SWITCH_FINAL=1; ;;
+            --reset)        SWITCH_RESET=1; ;;
+            --version=*)    SWITCH_NEW_VERSION="${arg#*=}"; ;;
+            --github)       SWITCH_GITHUB=1; ;;
+            --skip-tests)   SKIP_TESTS=1; ;;
+            --appdir-only)  run_mode=0; ;;
+            --git-init)     SWITCH_GIT_INIT=1; ;;
+            --backup)       SWITCH_BACKUP=1; ;;
+            --trace)        SWITCH_TRACE=1; ;;
+            --help)         usage; ;;
+            *)              echo ""; echo "ERROR: Unknown option: ${arg}"; echo ""; usage; ;;
         esac
     done
 }
@@ -2392,14 +2393,17 @@ install_os_dependencies()
 ################################################################################
 main()
 {
+    # Always export APP_VERSION from VERSION
+    APP_VERSION="$(read_version)";
+    export APP_VERSION;
     # ── bootstrap MUST be first ──────────────────────────────────────────────
     bootstrap_log "$@";
     parse_args "$@";
     print_banner;
     # Load Source
     if ! load_library_source; then return 1; fi
-    # --gitinit: Create a new local git repo
-    if (( SWITCH_GIT_INIT == 1 )); then git_init; return 0; fi
+    # --git-init: Create a new local git repo
+    if (( SWITCH_GIT_INIT == 1 )); then info "Git Init running"; git_init; return 0; fi
     # ── version handling MUST come first ───────────────────────────────────
     handle_versioning;
     # Check in git

@@ -1,9 +1,9 @@
 === ProjectSource Debug Log ===
 Active project root: /home/jflesher/Nextcloud/workspace/ProjectSource/ProjectSourceDoc
-2026-04-02T13:20:01  === generateAndReturnPath ENTER ===
-2026-04-02T13:20:01  projectRoot=/home/jflesher/Nextcloud/workspace/ProjectSource/ProjectSourceDoc
-2026-04-02T13:20:01  Loading project settings
-2026-04-02T13:20:01  Invoking ProjectSourceGenerator
-2026-04-02T13:20:01  Project-Source.txt=/home/jflesher/Nextcloud/workspace/ProjectSource/ProjectSourceDoc/Project-Source.txt exists=1
-2026-04-02T13:20:01  Backup: starting
-2026-04-02T13:20:05  SUCCESS
+2026-04-04T16:24:18  === generateAndReturnPath ENTER ===
+2026-04-04T16:24:18  projectRoot=/home/jflesher/Nextcloud/workspace/ProjectSource/ProjectSourceDoc
+2026-04-04T16:24:18  Loading project settings
+2026-04-04T16:24:18  Invoking ProjectSourceGenerator
+2026-04-04T16:24:18  Project-Source.txt=/home/jflesher/Nextcloud/workspace/ProjectSource/ProjectSourceDoc/Project-Source.txt exists=1
+2026-04-04T16:24:18  Backup: starting
+2026-04-04T16:24:22  SUCCESS

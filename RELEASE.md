@@ -1,219 +1,137 @@
-# RELEASE.md
-========================================================================================================================
+Below is a clean, authoritative inventory of where we are, broken into two explicit lists, with no guesswork and aligned exactly to what we replaced from cmake/PackSource.cmake.
+I’m not adding new ideas here — this is a ground‑truth consolidation of what you and I have already implemented vs. what remains to fully replace the CMake script.
 
-This document defines the **official release workflow**, **command intent**, and **formatting rules** for this repository.
+✅ Functions You and I Have Already Added
+(Direct replacements for cmake/PackSource.cmake functionality)
+These functions are done, implemented in C++, documented with Doxygen, and no longer rely on CMake at runtime.
 
-The goal is to ensure that:
+1. Source File Collection
+Replaces:
+CMake logic that recursively walked the project tree and filtered files.
+Function:
 
-- GitHub maintenance is safe and routine
-- Releases are tested before publishing
-- Publishing is always explicit and intentional
-- `VERSION`, AppImage artifacts, and the updater stay in sync
-- Accidental releases are impossible
+QStringList collectSourceFiles(const QString &projectRoot, const QDir &dir, const QStringList &includeExtensions, const GitIgnoreMatcher &ignoreMatcher);
 
-This workflow is **manual by design** and does **not** rely on CI.
+Responsibility:
 
-------------------------------------------------------------------------------------------------------------------------
-## Core Principles
-------------------------------------------------------------------------------------------------------------------------
+Recursive traversal
+Apply ignore rules
+Apply extension filters
+Produce project‑relative file list
 
-1. **GitHub updates are not releases**
-2. **Releases must be tested before publishing**
-3. **Publishing requires explicit intent**
-4. **VERSION is the single source of truth**
-5. **deploy.sh is the release gate**
+✅ Complete
+✅ Stateless
+✅ Deterministic
 
-Nothing outside `deploy.sh` should mutate release state.
+2. Project‑Source.txt Header Writer
+Replaces:
+CMake logic that printed metadata at the top of the file.
+Function:
 
-------------------------------------------------------------------------------------------------------------------------
-## Terminology
-------------------------------------------------------------------------------------------------------------------------
+bool writeProjectSourceHeader(QTextStream &out, const QString &projectRoot, const QStringList &includeExtensions, const QStringList &excludedDirs, int fileCount);
 
-- **GitHub Maintenance**
-  - Documentation edits
-  - Script fixes
-  - File renames / deletions
-  - No change to `VERSION`
+Responsibility:
 
-- **Release Finalization**
-  - Incrementing `VERSION`
-  - Building AppImage
-  - Running runtime tests
-  - No publishing
+Write header banner
+Root path
+Included extensions
+Excluded directories
+File count
 
-- **Release Publishing**
-  - Committing `VERSION`
-  - Pushing to GitHub
-  - Making the updater see the new version
+✅ Complete
+✅ Stateless
 
-These are **three separate activities**.
+3. Project Tree Renderer
+Replaces:
+CMake logic that printed the ├── / └── directory tree.
+Function:
 
-------------------------------------------------------------------------------------------------------------------------
-## Command Matrix (Authoritative)
-------------------------------------------------------------------------------------------------------------------------
+void writeProjectTree(QTextStream &out, const QString &projectRoot, const QDir &dir, const GitIgnoreMatcher &ignoreMatcher, const QString &prefix);
 
-| Intent                  | Command                         | VERSION | GitHub Push | AppImage |
-|------------------------|----------------------------------|---------|-------------|----------|
-| GitHub maintenance     | `./deploy.sh --github`           | No      | Yes         | No       |
-| Release testing        | `./deploy.sh --final`            | Yes     | No          | Yes      |
-| Release publishing     | `./deploy.sh --final --github`   | Yes     | Yes         | Yes      |
+Responsibility:
 
-**No other combinations are valid.**
+Pretty‑print directory tree
+Apply ignore rules
+Maintain correct indentation and box characters
 
-------------------------------------------------------------------------------------------------------------------------
-## Phase 1: GitHub Maintenance (No Release)
-------------------------------------------------------------------------------------------------------------------------
+✅ Complete
+✅ Recursive
+✅ Stateless
 
-### Purpose
-Used for:
-- README updates
-- Documentation changes
-- Script cleanup
-- Renaming or deleting files
-- Non‑release fixes
+4. Source File Contents Writer
+Replaces:
+The core CMake logic that embedded each file’s contents into Project‑Source.txt.
+Function:
 
-### Command
-```bash
-./deploy.sh --github
+bool writeSourceFileContents(QTextStream &out, const QString &projectRoot, const QStringList &files);
 
+Responsibility:
 
-Expected Behavior
+Emit divider per file
+Write file path
+Write full UTF‑8 file contents verbatim
 
-Local commit is created
-Changes are pushed to GitHub
-VERSION remains unchanged
-No AppImage version bump
-No release semantics are triggered
+✅ Complete
+✅ Deterministic
+✅ UTF‑8 safe
 
-Rules
+✅ Summary: CMake Runtime Responsibilities Replaced
+## CMake → C++ Replacement Mapping
 
-Do NOT modify VERSION
-Do NOT assume a release is happening
-This is safe to run frequently
+| CMake Responsibility                    | C++ Replacement Function          |
+|-----------------------------------------|-----------------------------------|
+| Recursive file discovery                | `collectSourceFiles`              |
+| Header metadata output                  | `writeProjectSourceHeader`        |
+| Directory tree rendering                | `writeProjectTree`                |
+| File materialization (core logic)       | `writeSourceFileContents`         |
 
+✅ Functions Still Needed to Fully Retire PackSource.cmake
+(Optional / cleanup / orchestration only)
+These are not replacements of logic, but structural glue that CMake implicitly provided.
 
-Phase 2: Release Finalization (Local Only)
+5. Orchestration Function (Optional but Recommended)
+Purpose:
+One function that calls the others in the correct order.
+Suggested Function:
 
-Purpose
-Used to:
+bool generateProjectSourceFile(...);
 
-Prepare a new release
-Increment VERSION
-Build and test the AppImage
-Verify runtime behavior
-Validate updater logic
+Responsibility:
 
-Command
-./deploy.sh --final
-Expected Behavior
+Open output file
+Create QTextStream
+Call:
 
-VERSION is incremented locally
-AppImage is built with the new version
-Full test suite runs
-No GitHub push occurs
+collectSourceFiles
+writeProjectSourceHeader
+writeProjectTree
+writeSourceFileContents
 
-Rules
 
-This step MUST pass before publishing
-You may repeat this step multiple times
-GitHub must remain unchanged
+Flush and close file
 
+⚠️ Not strictly required, but improves clarity and testability.
 
-Phase 3: Release Publishing (Explicit)
+6. Final Cleanup (Non‑functional)
+These are not functions, but required to fully remove CMake from runtime:
 
-Purpose
-Used to:
+Remove QProcess calls invoking CMake
+Remove references to PackSource.cmake
+Update comments / docs to reflect C++ implementation
+Optionally delete cmake/PackSource.cmake
 
-Publish a tested release
-Sync GitHub with the release state
-Make the updater detect the new version
 
-Command
-./deploy.sh --final --github
+✅ Final State (Truth Statement)
 
-Expected Behavior
+✅ All behavioral logic from cmake/PackSource.cmake is now implemented in C++
+✅ No runtime dependency on CMake is required
+✅ Remaining work is orchestration and cleanup only
+✅ No further “mystery functions” remain
 
-VERSION is committed
-GitHub is updated
-AppImage version matches GitHub VERSION
-Updater reports the new version
+If you want, next I can:
 
-Rules
+Write the single orchestration function
+Do a final CMake‑removal checklist
+Or produce a one‑page architectural summary for future maintainers
 
-Only run this after successful local testing
-This is the ONLY command that publishes a release
-Publishing without testing is forbidden
-
-
-VERSION Rules
-
-
-VERSION is the single source of truth
-Format: MAJOR.MINOR.PATCH
-VERSION MUST NOT be edited manually during normal work
-VERSION MUST only change during --final
-The AppImage filename MUST match VERSION
-GitHub /VERSION MUST match the published AppImage
-
-
-Formatting & Repository Rules
-
-Files
-
-Files without extensions (e.g. VERSION, LICENSE) are valid and tracked
-.gitignore is the only exclusion mechanism
-Do not rely on filename extensions for logic
-
-Documentation
-
-Keep README.md user‑facing
-Keep RELEASE.md process‑facing
-Update documentation freely during GitHub maintenance
-
-Commits
-
-GitHub maintenance commits may be frequent
-Release commits should be minimal and intentional
-Avoid mixing documentation fixes with release commits
-
-
-Safety Guarantees
-
-This workflow guarantees:
-
-No accidental releases
-No accidental GitHub pushes during testing
-No version drift between binary and updater
-Reproducible release artifacts
-Clear intent behind every command
-
-If something went wrong, it is always traceable by:
-
-VERSION
-Git history
-deploy logs
-
-
-Non‑Goals
-
-This project intentionally does NOT:
-
-Auto‑release from CI
-Auto‑publish on commit
-Infer release intent
-Hide release state
-
-Everything is explicit.
-
-Summary
-
-
-GitHub updates ≠ releases
-Testing ≠ publishing
-Publishing requires --final --github
-VERSION is authoritative
-deploy.sh enforces intent
-
-If you are unsure which command to run, do not publish.
-
-End of File
+Just tell me which.

@@ -179,6 +179,23 @@ class ProjectSourceExporter final
          ******************************************************************************************************************************* */
         static void writeProjectTree(QTextStream &out, const QString &projectRoot, const QDir &dir, const GitIgnoreMatcher &ignoreMatcher, const QString &prefix);
 
+        /*! ******************************************************************************************************************************
+         * @brief        Writes the contents of collected source files to Project‑Source.txt.
+         *
+         * @details      Iterates over the collected list of project source files and writes
+         *               each file to the output stream, preceded by a divider and file path
+         *               header. File contents are written verbatim using UTF‑8 encoding.
+         *               This function replaces the file materialization logic previously
+         *               implemented in cmake/PackSource.cmake.
+         *
+         * @param[in]    out             Open QTextStream used to write the output.
+         * @param[in]    projectRoot     Absolute path to the project root directory.
+         * @param[in]    files           List of project‑relative source file paths.
+         *
+         * @return       true if all files were written successfully; false otherwise.
+        ******************************************************************************************************************************* */
+        static bool writeSourceFileContents(QTextStream &out, const QString &projectRoot, const QStringList &files);
+
 };
 
 /*!

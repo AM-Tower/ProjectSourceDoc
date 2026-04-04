@@ -8,10 +8,11 @@
  *              - bash single-quote escaping helper used by WSL command composition
  *
  * @authors     Jeffrey Scott Flesher with the help of AI: Copilot
- * @date        2026-03-31
+ * @date        2026-04-02
  *********************************************************************************************************************************/
 #pragma once
 
+#include <QPlainTextEdit>
 #include <QString>
 
 class QTextEdit;
@@ -19,7 +20,7 @@ class QTextEdit;
 namespace psd::log
 {
     void clearLogFilesAtStartup();
-    void logAppend(QTextEdit *output, const QString &text);
+    void logAppend(QPlainTextEdit *output, const QString &text);
 
     /*!
      * ****************************************************************************************************************************

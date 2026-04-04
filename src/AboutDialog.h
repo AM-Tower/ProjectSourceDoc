@@ -4,7 +4,7 @@
  * @brief       About dialog for the application.
  * @details     Displays application name, version, and build information.
  * @authors     Jeffrey Scott Flesher with the help of AI: Copilot
- * @date        2026-04-02
+ * @date        2026-04-04
  *********************************************************************************************************************************/
 #pragma once
 

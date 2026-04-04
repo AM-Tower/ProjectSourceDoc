@@ -54,6 +54,8 @@ Excluded dirs: build*; .rcc; CMakeFiles; .git; .qtcreator; engines; 0-Archive; A
 │   ├── EmbeddedDocs.h
 │   ├── GitIgnoreMatcher.cpp
 │   ├── GitIgnoreMatcher.h
+│   ├── LineNumberPlainTextEdit.cpp
+│   ├── LineNumberPlainTextEdit.h
 │   ├── MainWindow.cpp
 │   ├── MainWindow.h
 │   ├── MainWindowTheme.cpp
@@ -1051,6 +1053,23 @@ class ProjectSourceExporter final
          ******************************************************************************************************************************* */
         static void writeProjectTree(QTextStream &out, const QString &projectRoot, const QDir &dir, const GitIgnoreMatcher &ignoreMatcher, const QString &prefix);
 
+        /*! ******************************************************************************************************************************
+         * @brief        Writes the contents of collected source files to Project‑Source.txt.
+         *
+         * @details      Iterates over the collected list of project source files and writes
+         *               each file to the output stream, preceded by a divider and file path
+         *               header. File contents are written verbatim using UTF‑8 encoding.
+         *               This function replaces the file materialization logic previously
+         *               implemented in cmake/PackSource.cmake.
+         *
+         * @param[in]    out             Open QTextStream used to write the output.
+         * @param[in]    projectRoot     Absolute path to the project root directory.
+         * @param[in]    files           List of project‑relative source file paths.
+         *
+         * @return       true if all files were written successfully; false otherwise.
+        ******************************************************************************************************************************* */
+        static bool writeSourceFileContents(QTextStream &out, const QString &projectRoot, const QStringList &files);
+
 };
 
 /*!
@@ -1111,7 +1130,7 @@ namespace psd::log
      * ****************************************************************************************************************************
      * @brief   Appends text to a QTextEdit output console.
      *****************************************************************************************************************************/
-    void logAppend(QTextEdit *output, const QString &text)
+    void logAppend(QPlainTextEdit *output, const QString &text)
     {
         if (!output) return;
 
@@ -2035,10 +2054,11 @@ void ProjectTreeBuilder::walkDirectory(const QString &projectRoot, const QString
  *              - bash single-quote escaping helper used by WSL command composition
  *
  * @authors     Jeffrey Scott Flesher with the help of AI: Copilot
- * @date        2026-03-31
+ * @date        2026-04-02
  *********************************************************************************************************************************/
 #pragma once
 
+#include <QPlainTextEdit>
 #include <QString>
 
 class QTextEdit;
@@ -2046,7 +2066,7 @@ class QTextEdit;
 namespace psd::log
 {
     void clearLogFilesAtStartup();
-    void logAppend(QTextEdit *output, const QString &text);
+    void logAppend(QPlainTextEdit *output, const QString &text);
 
     /*!
      * ****************************************************************************************************************************
@@ -2060,6 +2080,90 @@ namespace psd::log
 /*!
  * ********************************************************************************************************************************
  * End of AppLogUtils.h
+ *********************************************************************************************************************************/
+
+===================================================================================================================================
+=============================== FILE: src/LineNumberPlainTextEdit.h ===============================
+===================================================================================================================================
+/*!
+ * ********************************************************************************************************************************
+ * @file        LineNumberPlainTextEdit.h
+ * @brief       Declares a QPlainTextEdit subclass with a line number margin.
+ * @details     Provides an integrated line number area widget, width calculation, painting hooks,
+ *              and viewport margin management. Used in editors requiring visible line numbers.
+ * @authors     Jeffrey Scott Flesher with the help of AI: Copilot
+ * @date        2026-04-04
+ *********************************************************************************************************************************/
+
+#pragma once
+
+#include <QPlainTextEdit>
+#include <QWidget>
+
+class LineNumberArea;
+
+/*!
+ * ****************************************************************************************************************************
+ * @brief   A QPlainTextEdit subclass that displays line numbers.
+ * @details Manages a dedicated line number area widget, handles painting, geometry updates,
+ *          and viewport margin adjustments to keep line numbers aligned with text blocks.
+ *****************************************************************************************************************************/
+class LineNumberPlainTextEdit : public QPlainTextEdit
+{
+        Q_OBJECT
+
+    public:
+        /*!
+         * ************************************************************************************************************************
+         * @brief   Construct the LineNumberPlainTextEdit.
+         * @param   parent Optional parent widget.
+         *************************************************************************************************************************/
+        explicit LineNumberPlainTextEdit(QWidget *parent = nullptr);
+
+        /*!
+         * ************************************************************************************************************************
+         * @brief   Calculate the width required for the line number area.
+         * @return  Width in pixels based on the number of digits.
+         *************************************************************************************************************************/
+        int lineNumberAreaWidth() const;
+
+        /*!
+         * ************************************************************************************************************************
+         * @brief   Paint the line number area.
+         * @param   event Paint event.
+         *************************************************************************************************************************/
+        void lineNumberAreaPaintEvent(QPaintEvent *event);
+
+    protected:
+        /*!
+         * ************************************************************************************************************************
+         * @brief   Handle resize events and reposition the line number area.
+         * @param   event Resize event.
+         *************************************************************************************************************************/
+        void resizeEvent(QResizeEvent *event) override;
+
+    private slots:
+        /*!
+         * ************************************************************************************************************************
+         * @brief   Update viewport margins based on the line number area width.
+         *************************************************************************************************************************/
+        void updateLineNumberAreaWidth();
+
+        /*!
+         * ************************************************************************************************************************
+         * @brief   Update the line number area when scrolling or redrawing.
+         * @param   rect Updated rectangle.
+         * @param   dy   Vertical scroll offset.
+         *************************************************************************************************************************/
+        void updateLineNumberArea(const QRect &rect, int dy);
+
+    private:
+        LineNumberArea *m_lineNumberArea; //!< Line number area widget.
+};
+
+/*!
+ * ********************************************************************************************************************************
+ * @brief End of LineNumberPlainTextEdit.h
  *********************************************************************************************************************************/
 
 ===================================================================================================================================
@@ -2346,33 +2450,35 @@ private:
 ===================================================================================================================================
 /*!
  * ********************************************************************************************************************************
- * @file         MainWindow.h
- * @brief        Declares the main application window for ProjectSource.
- * @details      MainWindow owns and orchestrates the entire Qt Widgets UI for the ProjectSource
- * application.
+ * @file        MainWindow.h
+ * @brief       Declares the main application window for ProjectSource.
+ * @details     MainWindow owns and orchestrates the entire Qt Widgets UI for the ProjectSource
+ *              application.
  *
- *               Responsibilities include:
- *               - File menu (Open project, Open Recent, Exit)
- *               - Tools menu (Create Project‑Source.txt)
- *               - Help menu (Usage, About)
- *               - Central tabs (Log + Settings)
+ *              Responsibilities include:
+ *              - File menu (Open project, Open Recent, Exit)
+ *              - Tools menu (Create Project‑Source.txt)
+ *              - Help menu (Usage, About)
+ *              - Central tabs (Log + Settings)
  *
- *               The Settings tab supports:
- *               - Editable project folder list (per‑project selection)
- *               - Include file extensions (comma/space/semicolon separated)
- *               - Exclude folder patterns with browse support
- *               - Backup base folder selection with timestamped backups
+ *              The Settings tab supports:
+ *              - Editable project folder list (per‑project selection)
+ *              - Include file extensions (comma/space/semicolon separated)
+ *              - Exclude folder patterns with browse support
+ *              - Backup base folder selection with timestamped backups
  *
- *               All per‑project settings are persisted using QSettings and applied when generating
- * Project‑Source.txt and performing project backups.
+ *              All per‑project settings are persisted using QSettings and applied when generating
+ *              Project‑Source.txt and performing project backups.
  *
- * @author       Jeffrey Scott Flesher
- * @date         2026-04-02
+ * @authors     Jeffrey Scott Flesher with the help of AI: Copilot
+ * @date        2026-04-04
  *********************************************************************************************************************************/
 #pragma once
 
+#include <QLabel>
 #include <QLineEdit>
 #include <QMainWindow>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QString>
 #include <QStringList>
@@ -2383,121 +2489,79 @@ class QListWidget;
 class QMenu;
 class QProgressBar;
 class QTabWidget;
-class QTextEdit;
 class QToolBar;
 class StatusBarQueue;
 class QActionGroup;
+class QCloseEvent;
 
-
-static constexpr const char *kSettingsThemeMode = "ui/themeMode";
+static constexpr const char *kSettingsThemeMode = "ui/themeMode"; ///< Settings key for persisted theme mode
 
 /*!
  * ********************************************************************************************************************************
- * @brief  Theme Mode
+ * @brief Theme Mode
  *********************************************************************************************************************************/
 enum class ThemeMode
 {
-    System,
-    Light,
-    Dark
+    System, ///< Follow the operating system theme
+    Light,  ///< Force light application theme
+    Dark    ///< Force dark application theme
 };
 
 /*!
  * ********************************************************************************************************************************
- * @class        MainWindow
- * @brief        Primary GUI window for the ProjectSource application.
+ * @class MainWindow
+ * @brief Primary GUI window for the ProjectSource application.
  *
- * @details      MainWindow is responsible for all user‑facing interactions and delegates project
- * source generation and backup logic to ProjectSourceExporter.
- *
- *               This class owns:
- *               - Application menus and toolbar
- *               - Log display and progress UI
- *               - Settings tab and persistence
+ * @details MainWindow is responsible for all user‑facing interactions and delegates project
+ *          source generation and backup logic to ProjectSourceExporter.
  *
  * @public
  *********************************************************************************************************************************/
 class MainWindow final : public QMainWindow
 {
         Q_OBJECT
-
         friend class ProjectSourceDocTests;
 
     public:
-        /*!
-         * ****************************************************************************************************************************
-         * @brief        Construct the main application window.
-         * @param        parent  Optional parent widget.
-         ****************************************************************************************************************************/
+        //! Construct the main application window.
         explicit MainWindow(QWidget *parent = nullptr);
 
-        /*!
-         * ****************************************************************************************************************************
-         * @brief        Destructor for MainWindow.
-         ****************************************************************************************************************************/
+        //! Destructor for MainWindow.
         ~MainWindow() override;
 
     protected:
-        /*!
-         * ****************************************************************************************************************************
-         * @brief        Handle theme and language changes.
-         * @param        event  The change event.
-         ****************************************************************************************************************************/
+        //! Handle theme and language changes.
         void changeEvent(QEvent *event) override;
 
+        //! Persist window geometry and state on close.
+        void closeEvent(QCloseEvent *event) override;
+
     private slots:
-        /*!
-         * ****************************************************************************************************************************
-         * @brief        Triggered when the user selects "Open Project".
-         ****************************************************************************************************************************/
+        //! Triggered when the user selects "Open Project".
         void onOpenTriggered();
 
-        /*!
-         * ****************************************************************************************************************************
-         * @brief        Triggered when the user selects "Create Project‑Source.txt".
-         ****************************************************************************************************************************/
+        //! Triggered when the user selects "Create Project‑Source.txt".
         void onProjectSourceTriggered();
 
-        /*!
-         * ****************************************************************************************************************************
-         * @brief        Triggered when the user selects a recent project.
-         ****************************************************************************************************************************/
+        //! Triggered when the user selects a recent project.
         void onOpenRecentTriggered();
 
-        /*!
-         * ****************************************************************************************************************************
-         * @brief        Clears the recent project list.
-         ****************************************************************************************************************************/
+        //! Clears the recent project list.
         void onClearRecentTriggered();
 
-        /*!
-         * ****************************************************************************************************************************
-         * @brief        Browse for a project folder to add to the settings tab.
-         ****************************************************************************************************************************/
+        //! Browse for a project folder to add to the settings tab.
         void onBrowseProjectFolder();
 
-        /*!
-         * ****************************************************************************************************************************
-         * @brief        Remove the selected project folder from the settings tab.
-         ****************************************************************************************************************************/
+        //! Remove the selected project folder from the settings tab.
         void onRemoveProjectFolder();
 
-        /*!
-         * ****************************************************************************************************************************
-         * @brief        Browse for an exclude folder pattern.
-         ****************************************************************************************************************************/
+        //! Browse for an exclude folder pattern.
         void onBrowseExcludeFolder();
 
-        /*!
-         * ****************************************************************************************************************************
-         * @brief        Remove the selected exclude folder entry.
-         ****************************************************************************************************************************/
+        //! Remove the selected exclude folder entry.
         void onRemoveExcludeFolder();
 
-        /*!
-         * ****************************************************************************************************************************
-         * @brief   Show the About dialog.
-         *****************************************************************************************************************************/
+        //! Show the About dialog.
         void showAboutDialog();
 
     private:
@@ -2548,73 +2612,34 @@ class MainWindow final : public QMainWindow
         //! Refresh UI elements after theme changes.
         void refreshThemeUi();
 
-        /*!
-         * ****************************************************************************************************************************
-         * @brief Apply the system (default) theme.
-         *
-         * Clears any application-level palette or stylesheet overrides and restores the
-         * platform’s default style and palette. When selected, the application follows
-         * the operating system’s appearance (light/dark) automatically.
-         *
-         * This function triggers a palette change, which causes theme-aware icons and UI
-         * elements to refresh via existing event handlers.
-         *****************************************************************************************************************************/
+        //! Apply the system (default) theme.
         void applySystemTheme();
 
-        /*!
-         * ****************************************************************************************************************************
-         * @brief Apply a forced light theme.
-         *
-         * Applies a light application palette suitable for bright UI environments.
-         * This overrides the system theme until changed by the user.
-         *
-         * Theme-aware icons and widgets are refreshed automatically through palette
-         * change events.
-         *****************************************************************************************************************************/
+        //! Apply a forced light theme.
         void applyLightTheme();
 
-        /*!
-         * ****************************************************************************************************************************
-         * @brief Apply a forced dark theme.
-         *
-         * Applies a dark application palette designed for low-light environments.
-         * This overrides the system theme until changed by the user.
-         *
-         * Theme-aware icons and widgets are refreshed automatically through palette
-         * change events.
-         *****************************************************************************************************************************/
+        //! Apply a forced dark theme.
         void applyDarkTheme();
 
-        /*!
-         * ****************************************************************************************************************************
-         * @brief Save the selected theme mode to persistent settings.
-         * @param mode Selected theme mode.
-         *****************************************************************************************************************************/
+        //! Save the selected theme mode to persistent settings.
         void saveThemeMode(ThemeMode mode);
 
-        /*!
-         * ********************************************************************************************************************************
-         * @brief Restore the persisted theme mode from settings.
-         *          * Defaults to system theme if no value is stored.
-         * *******************************************************************************************************************************/
+        //! Restore the persisted theme mode from settings.
         void restoreThemeMode();
 
-        /*!
-         * ****************************************************************************************************************************
-         * @brief Update the Theme menu checkmarks to match the specified theme mode.
-         * @param mode Theme mode that should appear selected in the menu.
-         *****************************************************************************************************************************/
+        //! Update the Theme menu checkmarks to match the specified theme mode.
         void updateThemeMenuChecks(ThemeMode mode);
 
-        /*! ******************************************************************************************************************************
-         * @brief       Loads and analyzes a project folder at runtime.
-         * @param[in]   projectRoot Absolute path to the selected project.
-         ******************************************************************************************************************************* */
-        void loadProjectTree(const QString& projectRoot);
-        /*!
-         * ********************************************************************************************************************************
-         * @brief   setActiveProject
-         *********************************************************************************************************************************/
+        //! Restore persisted window geometry and state.
+        void restoreWindowState();
+
+        //! Persist window geometry and state.
+        void saveWindowState() const;
+
+        //! Loads and analyzes a project folder at runtime.
+        void loadProjectTree(const QString &projectRoot);
+
+        //! Set the currently active project.
         void setActiveProject(const QString &projectRoot, bool updateSettingsSelection);
 
         /* --------------------------- Settings Tab --------------------------- */
@@ -2652,91 +2677,57 @@ class MainWindow final : public QMainWindow
         //! Default excluded directories.
         static QStringList defaultExcludeDirs();
 
-        //! @brief Extract exclude directory patterns from a project's .gitignore file.
+        //! Extract exclude directory patterns from a project's .gitignore file.
         static QStringList excludeDirsFromGitignore(const QString &projectRoot);
 
     private:
         /* --------------------------- Core Members --------------------------- */
-        QTabWidget     *m_tabs{nullptr};
-        StatusBarQueue *m_statusQueue{nullptr};
-        QTextEdit      *m_logView{nullptr};
-        QProgressBar   *m_logProgress{nullptr};
-        bool            m_logResetPending{false};
 
-        QString m_openProjectRoot;
-        QString m_currentLogFilePath;
-        // Always points to the currently active project
-        QString m_activeProjectRoot;
+        QTabWidget *m_tabs{nullptr};            ///< Main tab widget containing Log and Settings tabs
+        StatusBarQueue *m_statusQueue{nullptr}; ///< Queued status bar message handler
+        QPlainTextEdit *m_logView{nullptr};     ///< Log output text view
+        QProgressBar *m_logProgress{nullptr};   ///< Progress indicator for log operations
+        bool m_logResetPending{false};          ///< Indicates a pending log reset
+        QString m_openProjectRoot;              ///< Root path of the opened project
+        QString m_currentLogFilePath;           ///< Currently displayed log file path
+        QString m_activeProjectRoot;            ///< Currently active project root path
 
-        QAction *m_openAction{nullptr};
-        QAction *m_projectSourceAction{nullptr};
-        QAction *m_exitAction{nullptr};
-        QAction *m_usageAction{nullptr};
-        QAction *m_aboutAction{nullptr};
-        QAction *m_clearRecentAction{nullptr};
+        QAction *m_openAction{nullptr};          ///< Open project action
+        QAction *m_projectSourceAction{nullptr}; ///< Create Project‑Source.txt action
+        QAction *m_exitAction{nullptr};          ///< Exit application action
+        QAction *m_usageAction{nullptr};         ///< Usage/help action
+        QAction *m_aboutAction{nullptr};         ///< About dialog action
+        QAction *m_clearRecentAction{nullptr};   ///< Clear recent projects action
 
-        /*!
-         * ****************************************************************************************************************************
-         * @brief Action to follow the system theme.
-         *
-         * When selected, clears all application palette overrides and allows the
-         * operating system to control the application’s appearance.
-         *****************************************************************************************************************************/
-        QAction *m_themeSystemAction{nullptr};
+        QAction *m_themeSystemAction{nullptr}; ///< System theme selection action
+        QAction *m_themeLightAction{nullptr};  ///< Light theme selection action
+        QAction *m_themeDarkAction{nullptr};   ///< Dark theme selection action
+        QActionGroup *m_themeGroup{nullptr};   ///< Exclusive theme action group
 
-        /*!
-         * ****************************************************************************************************************************
-         * @brief Action to force a light theme.
-         *
-         * Applies a light palette regardless of system appearance.
-         *****************************************************************************************************************************/
-        QAction *m_themeLightAction{nullptr};
-
-        /*!
-         * ****************************************************************************************************************************
-         * @brief Action to force a dark theme.
-         *
-         * Applies a dark palette regardless of system appearance.
-         *****************************************************************************************************************************/
-        QAction *m_themeDarkAction{nullptr};
-
-        /*!
-         * ****************************************************************************************************************************
-         * @brief Exclusive action group for theme selection.
-         *
-         * Ensures that only one theme option (System, Light, or Dark) can be active
-         * at a time in the Tools → Theme menu.
-         *****************************************************************************************************************************/
-        QActionGroup *m_themeGroup{nullptr};
-
-        QString m_platformStyleName;
-
-        QMenu *m_recentMenu{nullptr};
-        QToolBar *m_toolbar{nullptr};
-
-        QStringList m_recentProjects;
+        QString m_platformStyleName;  ///< Name of the platform style in use
+        QMenu *m_recentMenu{nullptr}; ///< Recent projects menu
+        QToolBar *m_toolbar{nullptr}; ///< Main application toolbar
+        QStringList m_recentProjects; ///< List of recently opened projects
 
         /* --------------------------- Settings Tab Widgets --------------------------- */
-        QWidget     *m_settingsTab{nullptr};
-        QListWidget *m_projectFoldersList{nullptr};
-        QPushButton *m_addProjectFolderBtn{nullptr};
-        QPushButton *m_removeProjectFolderBtn{nullptr};
 
-        QLineEdit   *m_includeExtEdit{nullptr};
-        QListWidget *m_excludeFoldersList{nullptr};
-        QPushButton *m_addExcludeBrowseBtn{nullptr};
-        QPushButton *m_removeExcludeBtn{nullptr};
-
-        QLineEdit   *m_backupFolderEdit{nullptr};
-        QPushButton *m_backupBrowseBtn{nullptr};
-
-        QString m_settingsSelectedProject;
+        QWidget *m_settingsTab{nullptr};                ///< Settings tab container widget
+        QListWidget *m_projectFoldersList{nullptr};     ///< List of project folders
+        QPushButton *m_addProjectFolderBtn{nullptr};    ///< Add project folder button
+        QPushButton *m_removeProjectFolderBtn{nullptr}; ///< Remove project folder button
+        QLineEdit *m_includeExtEdit{nullptr};           ///< Include extensions input
+        QListWidget *m_excludeFoldersList{nullptr};     ///< Excluded folders list
+        QPushButton *m_addExcludeBrowseBtn{nullptr};    ///< Browse exclude folder button
+        QPushButton *m_removeExcludeBtn{nullptr};       ///< Remove exclude folder button
+        QLineEdit *m_backupFolderEdit{nullptr};         ///< Backup base folder input
+        QPushButton *m_backupBrowseBtn{nullptr};        ///< Browse backup folder button
+        QString m_settingsSelectedProject;              ///< Currently selected settings project
+        QLabel *m_cursorPosLabel{nullptr};              ///< Cursor position status label
 };
 
 /*!
  * ********************************************************************************************************************************
- * @file         MainWindow.h
- * @brief        End of MainWindow.h.
+ * @brief End of MainWindow.h
  *********************************************************************************************************************************/
 
 ===================================================================================================================================
@@ -3010,6 +3001,167 @@ namespace psd::paths
  *********************************************************************************************************************************/
 
 ===================================================================================================================================
+=============================== FILE: src/LineNumberPlainTextEdit.cpp ===============================
+===================================================================================================================================
+/*!
+ * ********************************************************************************************************************************
+ * @file        LineNumberPlainTextEdit.cpp
+ * @brief       Implements a QPlainTextEdit subclass with a line number margin.
+ * @details     Provides a custom line number area widget, width calculation, painting logic,
+ *              and viewport margin updates. This component is typically used in code editors
+ *              or text editors requiring visible line numbers.
+ * @authors     Jeffrey Scott Flesher with the help of AI: Copilot
+ * @date        2026-04-04
+ *********************************************************************************************************************************/
+
+#include "LineNumberPlainTextEdit.h"
+#include <QPainter>
+#include <QTextBlock>
+
+/*!
+ * ****************************************************************************************************************************
+ * @brief   Internal helper widget used to render the line number area.
+ * @details Delegates all painting to LineNumberPlainTextEdit::lineNumberAreaPaintEvent().
+ *****************************************************************************************************************************/
+class LineNumberArea : public QWidget
+{
+    public:
+        /*!
+         * ************************************************************************************************************************
+         * @brief   Construct the line number area widget.
+         * @param   editor Pointer to the owning LineNumberPlainTextEdit.
+         *************************************************************************************************************************/
+        explicit LineNumberArea(LineNumberPlainTextEdit *editor) : QWidget(editor), m_editor(editor)
+        {
+        }
+
+        /*!
+         * ************************************************************************************************************************
+         * @brief   Provide a recommended size for the line number area.
+         * @return  Width based on digit count; height is flexible.
+         *************************************************************************************************************************/
+        QSize sizeHint() const override
+        {
+            return QSize(m_editor->lineNumberAreaWidth(), 0);
+        }
+
+    protected:
+        /*!
+         * ************************************************************************************************************************
+         * @brief   Paint event handler for the line number area.
+         * @param   event Paint event.
+         *************************************************************************************************************************/
+        void paintEvent(QPaintEvent *event) override
+        {
+            m_editor->lineNumberAreaPaintEvent(event);
+        }
+
+    private:
+        LineNumberPlainTextEdit *m_editor; //!< Owning editor instance.
+};
+
+/*!
+ * ****************************************************************************************************************************
+ * @brief   Construct the LineNumberPlainTextEdit.
+ * @param   parent Optional parent widget.
+ *****************************************************************************************************************************/
+LineNumberPlainTextEdit::LineNumberPlainTextEdit(QWidget *parent) : QPlainTextEdit(parent), m_lineNumberArea(new LineNumberArea(this))
+{
+    connect(this, &QPlainTextEdit::blockCountChanged, this, &LineNumberPlainTextEdit::updateLineNumberAreaWidth);
+    connect(this, &QPlainTextEdit::updateRequest, this, &LineNumberPlainTextEdit::updateLineNumberArea);
+    connect(this, &QPlainTextEdit::cursorPositionChanged, this, &LineNumberPlainTextEdit::updateLineNumberAreaWidth);
+
+    updateLineNumberAreaWidth();
+}
+
+/*!
+ * ****************************************************************************************************************************
+ * @brief   Calculate the width required for the line number area.
+ * @return  Width in pixels based on the number of digits plus spacing.
+ *****************************************************************************************************************************/
+int LineNumberPlainTextEdit::lineNumberAreaWidth() const
+{
+    const int digits = QString::number(blockCount()).length();
+    const int digitWidth = fontMetrics().horizontalAdvance(QLatin1Char('9'));
+    const int spaceWidth = fontMetrics().horizontalAdvance(QLatin1Char(' '));
+
+    return 3 + (digitWidth * digits) + spaceWidth + (spaceWidth * digits);
+}
+
+/*!
+ * ****************************************************************************************************************************
+ * @brief   Update viewport margins based on the line number area width.
+ *****************************************************************************************************************************/
+void LineNumberPlainTextEdit::updateLineNumberAreaWidth()
+{
+    setViewportMargins(lineNumberAreaWidth(), 0, 0, 0);
+}
+
+/*!
+ * ****************************************************************************************************************************
+ * @brief   Update the line number area when scrolling or redrawing.
+ * @param   rect Updated rectangle.
+ * @param   dy   Vertical scroll offset.
+ *****************************************************************************************************************************/
+void LineNumberPlainTextEdit::updateLineNumberArea(const QRect &rect, int dy)
+{
+    if (dy) m_lineNumberArea->scroll(0, dy);
+    else m_lineNumberArea->update(0, rect.y(), m_lineNumberArea->width(), rect.height());
+
+    if (rect.contains(viewport()->rect())) updateLineNumberAreaWidth();
+}
+
+/*!
+ * ****************************************************************************************************************************
+ * @brief   Handle resize events and reposition the line number area.
+ * @param   event Resize event.
+ *****************************************************************************************************************************/
+void LineNumberPlainTextEdit::resizeEvent(QResizeEvent *event)
+{
+    QPlainTextEdit::resizeEvent(event);
+
+    QRect cr = contentsRect();
+    m_lineNumberArea->setGeometry(QRect(cr.left(), cr.top(), lineNumberAreaWidth(), cr.height()));
+}
+
+/*!
+ * ****************************************************************************************************************************
+ * @brief   Paint the line numbers for visible text blocks.
+ * @param   event Paint event.
+ *****************************************************************************************************************************/
+void LineNumberPlainTextEdit::lineNumberAreaPaintEvent(QPaintEvent *event)
+{
+    QPainter painter(m_lineNumberArea);
+    painter.fillRect(event->rect(), palette().window());
+
+    QTextBlock block = firstVisibleBlock();
+    int blockNumber = block.blockNumber();
+
+    int top = static_cast<int>(blockBoundingGeometry(block).translated(contentOffset()).top());
+    int bottom = top + static_cast<int>(blockBoundingRect(block).height());
+
+    while (block.isValid() && top <= event->rect().bottom())
+    {
+        if (block.isVisible() && bottom >= event->rect().top())
+        {
+            const QString number = QString::number(blockNumber + 1) + QLatin1Char(' ');
+            painter.setPen(palette().text().color());
+            painter.drawText(0, top, m_lineNumberArea->width() - 4, fontMetrics().height(), Qt::AlignRight, number);
+        }
+
+        block = block.next();
+        top = bottom;
+        bottom = top + static_cast<int>(blockBoundingRect(block).height());
+        ++blockNumber;
+    }
+}
+
+/*!
+ * ********************************************************************************************************************************
+ * @brief End of LineNumberPlainTextEdit.cpp
+ *********************************************************************************************************************************/
+
+===================================================================================================================================
 =============================== FILE: src/ProjectSourceDoc.h ===============================
 ===================================================================================================================================
 /*!
@@ -3063,15 +3215,14 @@ class ProjectSourceDoc
 ===================================================================================================================================
 /*!
  * ********************************************************************************************************************************
- * @file main.cpp
- * @brief Application entry point for ProjectSourceDoc.
- * @authors     Jeffrey Scott Flesher using AI: Copilot
- * @date        2026-03-31
+ * @file        main.cpp
+ * @brief       Application entry point for ProjectSourceDoc.
  * @details
- *  This file initializes the Qt application object, installs runtime event filters, applies a theme-aware application icon,
- *  installs the application translator from embedded resources, and launches the main UI.
+ *  Initializes the Qt application, installs runtime event filters, applies theme-aware resources,
+ *  loads translations, resolves VERSION from the project root, and launches the main UI.
+ * @authors     Jeffrey Scott Flesher using AI: Copilot
+ * @date        2026-04-02
  *********************************************************************************************************************************/
-
 #include "MainWindow.h"
 
 #include <QApplication>
@@ -3084,6 +3235,7 @@ class ProjectSourceDoc
 #include <QIcon>
 #include <QLocale>
 #include <QPalette>
+#include <QTextStream>
 #include <QTimer>
 #include <QTranslator>
 #include <QWidget>
@@ -3091,34 +3243,82 @@ class ProjectSourceDoc
 
 /*!
  * ********************************************************************************************************************************
- * @brief Configure early runtime (before QApplication)
+ * @brief Configure early runtime (before QApplication).
  *
  * This function is restricted to environment configuration only.
  * It must NOT call any QCoreApplication / QApplication APIs.
  *********************************************************************************************************************************/
 static void configureEarlyRuntime(int argc, char *argv[])
 {
-    #ifdef __MINGW32__
-    // Force OpenGL RHI on MinGW for stability (do NOT remove).
+#ifdef __MINGW32__
     qputenv("QT_DEFAULT_RHI", "opengl");
     qputenv("QT_QPA_PLATFORM", "windows");
 
-    // Optional: allow plugins next to the executable (Windows portability).
     const QString exeDir = QFileInfo(QString::fromLocal8Bit(argv[0])).absolutePath();
-    const QString pluginsDir = QDir(exeDir).filePath("plugins");
-    if (QDir(pluginsDir).exists())
-    {
-        qputenv("QT_PLUGIN_PATH", QFile::encodeName(pluginsDir));
-    }
+    const QString pluginsDir = QDir(exeDir).filePath(QStringLiteral("plugins"));
+    if (QDir(pluginsDir).exists()) qputenv("QT_PLUGIN_PATH", QFile::encodeName(pluginsDir));
 
-    // Diagnostic output (stderr is safe pre-QApplication).
     fprintf(stderr, "QT_DEFAULT_RHI=%s\n", qgetenv("QT_DEFAULT_RHI").constData());
     fprintf(stderr, "QT_QPA_PLATFORM=%s\n", qgetenv("QT_QPA_PLATFORM").constData());
     fprintf(stderr, "QT_PLUGIN_PATH=%s\n", qgetenv("QT_PLUGIN_PATH").constData());
-    #else
+#else
     Q_UNUSED(argc);
     Q_UNUSED(argv);
-    #endif
+#endif
+}
+
+/*!
+ * ********************************************************************************************************************************
+ * @brief Locate the project root directory.
+ * @details Walks upward from the executable directory until CMakeLists.txt is found.
+ * @return  Absolute path to project root, or empty string if not found.
+ *********************************************************************************************************************************/
+static QString findProjectRoot()
+{
+    QDir dir(QCoreApplication::applicationDirPath());
+
+    while (dir.exists())
+    {
+        if (QFileInfo::exists(dir.filePath(QStringLiteral("CMakeLists.txt")))) return dir.absolutePath();
+        if (!dir.cdUp()) break;
+    }
+
+    return {};
+}
+
+/*!
+ * ********************************************************************************************************************************
+ * @brief Load application version from VERSION file.
+ * @details VERSION is the single source of truth per RELEASE.md.
+ * @return  Version string, or "0.0.0" if unavailable.
+ *********************************************************************************************************************************/
+static QString loadVersionFromFile()
+{
+    const QString projectRoot = findProjectRoot();
+    if (projectRoot.isEmpty())
+    {
+        qWarning() << "Project root not found; VERSION unavailable";
+        return QStringLiteral("0.0.0");
+    }
+
+    const QString versionPath = QDir(projectRoot).filePath(QStringLiteral("VERSION"));
+    QFile file(versionPath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+    {
+        qWarning() << "VERSION file not readable:" << versionPath;
+        return QStringLiteral("0.0.0");
+    }
+
+    QTextStream in(&file);
+    const QString version = in.readLine().trimmed();
+    if (version.isEmpty())
+    {
+        qWarning() << "VERSION file empty:" << versionPath;
+        return QStringLiteral("0.0.0");
+    }
+
+    qDebug() << "Loaded VERSION:" << version << "from" << versionPath;
+    return version;
 }
 
 /*!
@@ -3138,18 +3338,14 @@ static bool isDarkTheme()
  *********************************************************************************************************************************/
 static void applyThemedAppIcon()
 {
-    const QString theme = isDarkTheme() ? "dark" : "light";
-    const QString path = QString(":/icons/%1/app.svg").arg(theme);
+    const QString theme = isDarkTheme() ? QStringLiteral("dark") : QStringLiteral("light");
+    const QString path = QStringLiteral(":/icons/%1/app.svg").arg(theme);
 
     const QIcon icon(path);
     QApplication::setWindowIcon(icon);
 
-    for (QWidget *w : QApplication::topLevelWidgets())
-    {
-        w->setWindowIcon(icon);
-    }
-
-    qDebug() << "App icon path:" << path << "exists?" << QFile::exists(path) << "isNull?" << icon.isNull();
+    const auto widgets = QApplication::topLevelWidgets();
+    for (QWidget *w : widgets) w->setWindowIcon(icon);
 }
 
 /*!
@@ -3160,11 +3356,20 @@ static void applyThemedAppIcon()
 class ThemeWatcher final : public QObject
 {
     public:
+        /*!
+         * ****************************************************************************************************************************
+         * @brief Construct ThemeWatcher.
+         *****************************************************************************************************************************/
         explicit ThemeWatcher(QObject *parent = nullptr) : QObject(parent) {}
 
     protected:
+        /*!
+         * ****************************************************************************************************************************
+         * @brief Event filter for theme-related changes.
+         *****************************************************************************************************************************/
         bool eventFilter(QObject *obj, QEvent *ev) override
         {
+            Q_UNUSED(obj);
             switch (ev->type())
             {
             case QEvent::ApplicationPaletteChange:
@@ -3175,7 +3380,7 @@ class ThemeWatcher final : public QObject
             default:
                 break;
             }
-            return QObject::eventFilter(obj, ev);
+            return false;
         }
 };
 
@@ -3186,8 +3391,8 @@ class ThemeWatcher final : public QObject
 static QString normalizedLocale()
 {
     const QString systemLocale = QLocale::system().name();
-    if (systemLocale == "zh_CN") return "zh_CN";
-    return systemLocale.section('_', 0, 0);
+    if (systemLocale == QStringLiteral("zh_CN")) return QStringLiteral("zh_CN");
+    return systemLocale.section(QLatin1Char('_'), 0, 0);
 }
 
 /*!
@@ -3197,8 +3402,8 @@ static QString normalizedLocale()
 static bool loadAppTranslator(QTranslator &translator)
 {
     const QString loc = normalizedLocale();
-    if (translator.load(QString(":/i18n/ProjectSourceDoc_%1.qm").arg(loc))) return true;
-    if (translator.load(":/i18n/ProjectSourceDoc_en.qm")) return true;
+    if (translator.load(QStringLiteral(":/i18n/ProjectSourceDoc_%1.qm").arg(loc))) return true;
+    if (translator.load(QStringLiteral(":/i18n/ProjectSourceDoc_en.qm"))) return true;
     return false;
 }
 
@@ -3208,41 +3413,36 @@ static bool loadAppTranslator(QTranslator &translator)
  *********************************************************************************************************************************/
 int main(int argc, char *argv[])
 {
-    // ✅ Environment setup only
     configureEarlyRuntime(argc, argv);
 
-    // ✅ QApplication must be constructed as early as possible
     QApplication app(argc, argv);
 
-    QApplication::setApplicationName("ProjectSourceDoc");
-    QApplication::setOrganizationName("ProjectSourceDoc");
-    QApplication::setApplicationVersion("0.1.0");
+    QApplication::setApplicationName(QStringLiteral("ProjectSourceDoc"));
+    QApplication::setOrganizationName(QStringLiteral("ProjectSourceDoc"));
+    QApplication::setApplicationVersion(loadVersionFromFile());
 
-    // ✅ Install theme watcher (safe after QApplication)
     ThemeWatcher watcher(&app);
     app.installEventFilter(&watcher);
 
-    // ✅ Defer ALL UI-touching startup work until event loop is active
     QTimer::singleShot(0, &app,
                        [&app]()
                        {
                            static QTranslator translator;
-                           const bool loaded = loadAppTranslator(translator);
-
-                           qDebug() << "Translator locale:" << normalizedLocale() << "loaded?" << loaded;
-                           if (loaded)
-                           { app.installTranslator(&translator); }
+                           if (loadAppTranslator(translator)) app.installTranslator(&translator);
                            applyThemedAppIcon();
                        });
-    // ✅ Create main window AFTER translator install is queued
+
     MainWindow window;
     window.show();
+
     return app.exec();
 }
 
-/**********************************************************************************************************************************
- *  End of main.cpp
+/*!
+ * ********************************************************************************************************************************
+ * @brief End of main.cpp
  *********************************************************************************************************************************/
+
 ===================================================================================================================================
 =============================== FILE: src/MainWindow.cpp ===============================
 ===================================================================================================================================
@@ -3256,8 +3456,8 @@ int main(int argc, char *argv[])
  *               MainWindow orchestrates user interaction only and delegates all generation and
  *               backup logic to ProjectSourceExporter.
  *
- * @author       Jeffrey Scott Flesher
- * @date         2026-04-02
+ * @author       Jeffrey Scott Flesher with AI: Copilot
+ * @date         2026-04-04
  *********************************************************************************************************************************/
 
 #include "MainWindow.h"
@@ -3291,6 +3491,9 @@ int main(int argc, char *argv[])
 #include <QSignalBlocker>
 #include <QStyle>
 #include <QStandardItemModel>
+#include <LineNumberPlainTextEdit.h>
+#include <QGuiApplication>
+#include <QScreen>
 
 #include "AboutDialog.h"
 #include "AppLogUtils.h"
@@ -3308,18 +3511,16 @@ static constexpr const char *kSettingsProjectFolders = "ui/projectFolders";
 static constexpr int kMaxRecentProjects = 10;
 
 /*!
- * ********************************************************************************************************************************
- * @brief        Constructs the main application window.
- *********************************************************************************************************************************/
+ * ****************************************************************************************************************************
+ * @brief Constructs the main application window.
+ *****************************************************************************************************************************/
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 {
     setWindowTitle(tr("ProjectSource"));
     resize(1100, 700);
     psd::log::clearLogFilesAtStartup();
-
     // Capture the platform default style name before we ever force Fusion.
     m_platformStyleName = qApp->style()->objectName();
-
     loadRecentProjects();
     createActions();
     createMenus();
@@ -3327,6 +3528,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     createTabs();
     createStatusBar();
     restoreThemeMode();
+    restoreWindowState();
 }
 
 /*!
@@ -3334,6 +3536,73 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
  * @brief        Destroys the main application window.
  *********************************************************************************************************************************/
 MainWindow::~MainWindow() = default;
+
+/*!
+ * ****************************************************************************************************************************
+ * @brief   Restore persisted window geometry and state.
+ *****************************************************************************************************************************/
+void MainWindow::restoreWindowState()
+{
+    QSettings settings;
+
+    const QByteArray geometry = settings.value(QStringLiteral("ui/windowGeometry")).toByteArray();
+    const QByteArray state = settings.value(QStringLiteral("ui/windowState")).toByteArray();
+    const bool wasMaximized = settings.value(QStringLiteral("ui/windowMaximized"), false).toBool();
+
+    if (!geometry.isEmpty()) restoreGeometry(geometry);
+    if (!state.isEmpty()) restoreState(state);
+
+    // Ensure the restored window is visible on at least one screen
+    QRect frame = frameGeometry();
+    bool onScreen = false;
+
+    for (QScreen *screen : QGuiApplication::screens())
+    {
+        if (screen->availableGeometry().intersects(frame))
+        {
+            onScreen = true;
+            break;
+        }
+    }
+
+    if (!onScreen)
+    {
+        // Fallback: center on primary screen with a reasonable size
+        QScreen *primary = QGuiApplication::primaryScreen();
+        if (primary)
+        {
+            const QRect avail = primary->availableGeometry();
+            resize(avail.size() * 0.75);
+            move(avail.center() - rect().center());
+        }
+    }
+
+    if (wasMaximized) showMaximized();
+}
+
+/*!
+ * ****************************************************************************************************************************
+ * @brief   Persist window geometry and state.
+ *****************************************************************************************************************************/
+void MainWindow::saveWindowState() const
+{
+    QSettings settings;
+    settings.setValue(QStringLiteral("ui/windowMaximized"), isMaximized());
+    // Only save normal geometry when not maximized
+    if (!isMaximized()) { settings.setValue(QStringLiteral("ui/windowGeometry"), saveGeometry()); }
+    settings.setValue(QStringLiteral("ui/windowState"), saveState());
+}
+
+/*!
+ * ****************************************************************************************************************************
+ * @brief   Persist window state before closing.
+ * @param   event Close event.
+ *****************************************************************************************************************************/
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    saveWindowState();
+    QMainWindow::closeEvent(event);
+}
 
 /*!
  * ********************************************************************************************************************************
@@ -3567,15 +3836,29 @@ void MainWindow::createTabs()
     m_logProgress->setRange(0, 100);
     layout->addWidget(m_logProgress);
 
-    m_logView = new QTextEdit(logTab);
+    m_logView = new LineNumberPlainTextEdit(logTab);
     m_logView->setReadOnly(true);
-    m_logView->setLineWrapMode(QTextEdit::NoWrap);
-    layout->addWidget(m_logView, 1);
+    m_logView->setWordWrapMode(QTextOption::NoWrap);
+    m_logView->setUndoRedoEnabled(false);
 
+    layout->addWidget(m_logView, 1);
     m_tabs->addTab(logTab, themedIcon("log"), tr("Log"));
 
     /* ---------------------------- Settings tab ---------------------------- */
     createSettingsTab();
+
+    /* -------------------- Cursor position → status bar -------------------- */
+    connect(m_logView, &QPlainTextEdit::cursorPositionChanged, this,
+            [this]()
+            {
+                if (!m_cursorPosLabel) return;
+
+                QTextCursor cursor = m_logView->textCursor();
+                const int line = cursor.blockNumber() + 1;
+                const int column = cursor.positionInBlock() + 1;
+
+                m_cursorPosLabel->setText(tr("Ln %1, Col %2").arg(line).arg(column));
+            });
 }
 
 /*!
@@ -3586,6 +3869,18 @@ void MainWindow::createStatusBar()
 {
     m_statusQueue = new StatusBarQueue(statusBar(), this);
     m_statusQueue->enqueue(tr("Ready"), 2);
+
+    m_cursorPosLabel = new QLabel(tr("Ln 1, Col 1"), this);
+
+    // Ensure stable width so the label never touches the right edge
+    // and does not resize as line/column numbers grow.
+    const QFontMetrics fm(m_cursorPosLabel->font());
+    const int padding = fm.horizontalAdvance(QLatin1Char(' ')) * 2;
+    const int minWidth = fm.horizontalAdvance(QStringLiteral("Ln 99999, Col 999")) + padding;
+
+    m_cursorPosLabel->setMinimumWidth(minWidth);
+
+    statusBar()->addPermanentWidget(m_cursorPosLabel);
 }
 
 /*!
@@ -3668,9 +3963,10 @@ bool MainWindow::openProjectFolder(const QString &folderPath, bool showCMakeIfPr
 }
 
 /*!
- * ********************************************************************************************************************************
- * @brief        Handles File → Open.
- *********************************************************************************************************************************/
+ * ****************************************************************************************************************************
+ * @brief   Handles File → Open.
+ * @details Opens a project folder and synchronizes the Settings tab selection.
+ *****************************************************************************************************************************/
 void MainWindow::onOpenTriggered()
 {
     const QString start = !m_openProjectRoot.isEmpty() ? m_openProjectRoot : QDir::homePath();
@@ -3679,7 +3975,14 @@ void MainWindow::onOpenTriggered()
 
     if (dir.isEmpty()) return;
 
-    openProjectFolder(dir, true);
+    if (!openProjectFolder(dir, true)) return;
+
+    /* ------------------------------------------------------------------------------------------------
+     * Match Recent-project behavior:
+     * - Ensure Settings tab is active
+     * - Ensure selected project is visible
+     * ------------------------------------------------------------------------------------------------ */
+    if (m_tabs) m_tabs->setCurrentIndex(1);
 }
 
 /*!
@@ -4196,9 +4499,10 @@ void MainWindow::loadSettingsForProject(const QString &projectRoot)
 }
 
 /*!
- * ********************************************************************************************************************************
- * @brief        Handles Tools → Create Project‑Source.txt.
- *********************************************************************************************************************************/
+ * ****************************************************************************************************************************
+ * @brief   Handles Tools → Create Project‑Source.txt.
+ * @details Validates required Settings values before invoking ProjectSourceExporter.
+ *****************************************************************************************************************************/
 void MainWindow::onProjectSourceTriggered()
 {
     if (m_statusQueue)
@@ -4207,22 +4511,40 @@ void MainWindow::onProjectSourceTriggered()
         statusBar()->showMessage(tr("Project Source: starting..."), 2000);
 
     const QString projectRoot = m_activeProjectRoot;
-
     if (projectRoot.trimmed().isEmpty() || !QDir(projectRoot).exists())
     {
         appendToLog(tr("ERROR: No active project selected.\n"));
         return;
     }
 
-    // ✅ DEBUG
+    /* ------------------------------------------------------------------------------------------------
+     * Validate Settings → Backup folder (required)
+     * ------------------------------------------------------------------------------------------------ */
+    if (!m_backupFolderEdit || m_backupFolderEdit->text().trimmed().isEmpty())
     {
-        QFile f(QDir(projectRoot).filePath("ProjectSource-Debug.log"));
+        if (m_tabs) m_tabs->setCurrentIndex(1); // Settings tab
+        if (m_backupFolderEdit) m_backupFolderEdit->setFocus();
+
+        if (m_statusQueue)
+            m_statusQueue->enqueue(tr("Please set a Backup folder in Settings before generating."), 5);
+        else
+            statusBar()->showMessage(tr("Please set a Backup folder in Settings before generating."), 5000);
+
+        appendToLog(tr("ERROR: Backup folder not set. Generation aborted.\n"));
+        return;
+    }
+
+    /* ------------------------------------------------------------------------------------------------
+     * Debug log (existing behavior)
+     * ------------------------------------------------------------------------------------------------ */
+    {
+        QFile f(QDir(projectRoot).filePath(QStringLiteral("ProjectSource-Debug.log")));
         if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
         {
-            // Optional: fallback to qWarning()
             qWarning() << "Failed to open debug log file:" << f.fileName();
             return;
         }
+
         QTextStream ts(&f);
         ts << "=== ProjectSource Debug Log ===\n";
         ts << "Active project root: " << projectRoot << "\n";
@@ -4233,8 +4555,8 @@ void MainWindow::onProjectSourceTriggered()
 
     if (!procLog.trimmed().isEmpty() && m_logView)
     {
-        m_logView->append(tr("\n==================== [Project Source Output] ====================\n"));
-        m_logView->append(procLog);
+        appendToLog(tr("\n==================== [Project Source Output] ====================\n"));
+        appendToLog(procLog);
     }
 
     if (outPath.isEmpty())
@@ -4513,7 +4835,17 @@ One time:
     git add VERSION; git commit -m "Add VERSION file"; git push origin main
 
 ---
+## Age Verification Disclaimer
 
+This application does **not** require age verification.
+
+The app does not provide age-restricted content, does not offer regulated services, and is not designed or marketed exclusively for adults. Based on its functionality and intended use, no age-gating or age-verification mechanisms are required.
+
+This application operates as a native, non-web-based product and does not expose users to content or features that would reasonably necessitate age verification under common regulatory frameworks.
+
+Please note that legal requirements may vary by jurisdiction. Users and distributors are responsible for ensuring compliance with any local laws or regulations that may apply in their region.
+
+---
 ## License
 
 Copyright 2026
@@ -4530,19 +4862,18 @@ Jeffrey Scott Flesher
 Created with the assistance of Microsoft Copilot and iterative AI tooling.
 
 ---
-
 End of README.md
+
 ===================================================================================================================================
 =============================== FILE: FIXME.md ===============================
 ===================================================================================================================================
-1. Fix version, it should update main.cpp
-2. Check if Settings backup folder is empty, if so, make tab active and show statusbar to update it.
-3.
+List all bugs and features here:
+
 ===================================================================================================================================
 =============================== FILE: AI-CPP.md ===============================
 ===================================================================================================================================
-​# Formatting rules and style guide
-* Note: I do not want to have to write doxygen updates or header because they change all the time.
+​​# Formatting rules and style guide
+* Note: I do not want to have to write doxygen updates or headers because they change all the time.
 1. Use Doxygen headers for the top with a footer for the bottom, and all functions.
 * Top Header:
 ```
@@ -4555,9 +4886,17 @@ End of README.md
  * @date        2026-04-02
  *********************************************************************************************************************************/
 ```
-* Update the @date YYYY-MM-DD formate
+* Update the @date YYYY-MM-DD format
 * Footer:
 ```
+* Use tags that apply:
+- `@brief` — one concise sentence
+- `@details` — optional, for deeper explanation
+- `@param` — for each parameter
+- `@return` — only when non‑void
+- `@note` — optional (ownership, side effects, caveats)
+- `@throws` — if exceptions are used
+- `@threadsafe`, `@reentrant`, or `@notthreadsafe` — when relevant
 /*!
  * ********************************************************************************************************************************
  * @brief End of AppLogUtils.h
@@ -4572,6 +4911,13 @@ End of README.md
      * @param   arg1 Describe argument.
      * @return  Return type.
      *****************************************************************************************************************************/
+* Classes in headers.h
+- //! Describe functionName.
+- void functionName();
+- int varName; ///< Describe varName
+- Each enum value MUST have a trailing ///< AlignTrailingComments: Always
+- Every data member in a header must have ///< AlignTrailingComments: Always
+
 ```
 2. Qt Brackets
 ```
@@ -4607,13 +4953,12 @@ ColumnLimit: 0
 4. Do not show snippets or stubs, as they delete functions and functionality breaking the code.
   * Show complete functions with headers, with the exception of a one line or a block of code fix.
   * If showing only functions that change, do not include top header or footer to prevent deleting functions.
-    * Show functions in seprate code copy box so I overwrite the correct function.
+    * Show functions in a separate code copy box so I overwrite the correct function.
 5. Ensure there are no errors or warnings in code using clazy.
 6. Do not show functions, code or files that have not changed.
 7. Clazy
   * for (const QFileInfo &info : dirEntries)
     * FileName.cpp:60: warning: c++11 range-loop might detach Qt container (QFileInfoList) [clazy-range-loop-detach]
-
 ===================================================================================================================================
 =============================== FILE: tests/ProjectSourceDocTests.cpp ===============================
 ===================================================================================================================================
@@ -4736,7 +5081,7 @@ class ProjectSourceDocTests final : public QObject
          */
         void logAppend_appendsPlainText()
         {
-            QTextEdit edit;
+            QPlainTextEdit edit;
             edit.setPlainText(QStringLiteral("A"));
 
             psd::log::logAppend(&edit, QStringLiteral("B"));
@@ -4937,225 +5282,143 @@ QTEST_MAIN(ProjectSourceDocTests)
 ===================================================================================================================================
 =============================== FILE: RELEASE.md ===============================
 ===================================================================================================================================
-# RELEASE.md
-========================================================================================================================
+Below is a clean, authoritative inventory of where we are, broken into two explicit lists, with no guesswork and aligned exactly to what we replaced from cmake/PackSource.cmake.
+I’m not adding new ideas here — this is a ground‑truth consolidation of what you and I have already implemented vs. what remains to fully replace the CMake script.
 
-This document defines the **official release workflow**, **command intent**, and **formatting rules** for this repository.
+✅ Functions You and I Have Already Added
+(Direct replacements for cmake/PackSource.cmake functionality)
+These functions are done, implemented in C++, documented with Doxygen, and no longer rely on CMake at runtime.
 
-The goal is to ensure that:
+1. Source File Collection
+Replaces:
+CMake logic that recursively walked the project tree and filtered files.
+Function:
 
-- GitHub maintenance is safe and routine
-- Releases are tested before publishing
-- Publishing is always explicit and intentional
-- `VERSION`, AppImage artifacts, and the updater stay in sync
-- Accidental releases are impossible
+QStringList collectSourceFiles(const QString &projectRoot, const QDir &dir, const QStringList &includeExtensions, const GitIgnoreMatcher &ignoreMatcher);
 
-This workflow is **manual by design** and does **not** rely on CI.
+Responsibility:
 
-------------------------------------------------------------------------------------------------------------------------
-## Core Principles
-------------------------------------------------------------------------------------------------------------------------
+Recursive traversal
+Apply ignore rules
+Apply extension filters
+Produce project‑relative file list
 
-1. **GitHub updates are not releases**
-2. **Releases must be tested before publishing**
-3. **Publishing requires explicit intent**
-4. **VERSION is the single source of truth**
-5. **deploy.sh is the release gate**
+✅ Complete
+✅ Stateless
+✅ Deterministic
 
-Nothing outside `deploy.sh` should mutate release state.
+2. Project‑Source.txt Header Writer
+Replaces:
+CMake logic that printed metadata at the top of the file.
+Function:
 
-------------------------------------------------------------------------------------------------------------------------
-## Terminology
-------------------------------------------------------------------------------------------------------------------------
+bool writeProjectSourceHeader(QTextStream &out, const QString &projectRoot, const QStringList &includeExtensions, const QStringList &excludedDirs, int fileCount);
 
-- **GitHub Maintenance**
-  - Documentation edits
-  - Script fixes
-  - File renames / deletions
-  - No change to `VERSION`
+Responsibility:
 
-- **Release Finalization**
-  - Incrementing `VERSION`
-  - Building AppImage
-  - Running runtime tests
-  - No publishing
+Write header banner
+Root path
+Included extensions
+Excluded directories
+File count
 
-- **Release Publishing**
-  - Committing `VERSION`
-  - Pushing to GitHub
-  - Making the updater see the new version
+✅ Complete
+✅ Stateless
 
-These are **three separate activities**.
+3. Project Tree Renderer
+Replaces:
+CMake logic that printed the ├── / └── directory tree.
+Function:
 
-------------------------------------------------------------------------------------------------------------------------
-## Command Matrix (Authoritative)
-------------------------------------------------------------------------------------------------------------------------
+void writeProjectTree(QTextStream &out, const QString &projectRoot, const QDir &dir, const GitIgnoreMatcher &ignoreMatcher, const QString &prefix);
 
-| Intent                  | Command                         | VERSION | GitHub Push | AppImage |
-|------------------------|----------------------------------|---------|-------------|----------|
-| GitHub maintenance     | `./deploy.sh --github`           | No      | Yes         | No       |
-| Release testing        | `./deploy.sh --final`            | Yes     | No          | Yes      |
-| Release publishing     | `./deploy.sh --final --github`   | Yes     | Yes         | Yes      |
+Responsibility:
 
-**No other combinations are valid.**
+Pretty‑print directory tree
+Apply ignore rules
+Maintain correct indentation and box characters
 
-------------------------------------------------------------------------------------------------------------------------
-## Phase 1: GitHub Maintenance (No Release)
-------------------------------------------------------------------------------------------------------------------------
+✅ Complete
+✅ Recursive
+✅ Stateless
 
-### Purpose
-Used for:
-- README updates
-- Documentation changes
-- Script cleanup
-- Renaming or deleting files
-- Non‑release fixes
+4. Source File Contents Writer
+Replaces:
+The core CMake logic that embedded each file’s contents into Project‑Source.txt.
+Function:
 
-### Command
-```bash
-./deploy.sh --github
+bool writeSourceFileContents(QTextStream &out, const QString &projectRoot, const QStringList &files);
 
+Responsibility:
 
-Expected Behavior
+Emit divider per file
+Write file path
+Write full UTF‑8 file contents verbatim
 
-Local commit is created
-Changes are pushed to GitHub
-VERSION remains unchanged
-No AppImage version bump
-No release semantics are triggered
+✅ Complete
+✅ Deterministic
+✅ UTF‑8 safe
 
-Rules
+✅ Summary: CMake Runtime Responsibilities Replaced
+## CMake → C++ Replacement Mapping
 
-Do NOT modify VERSION
-Do NOT assume a release is happening
-This is safe to run frequently
+| CMake Responsibility                    | C++ Replacement Function          |
+|-----------------------------------------|-----------------------------------|
+| Recursive file discovery                | `collectSourceFiles`              |
+| Header metadata output                  | `writeProjectSourceHeader`        |
+| Directory tree rendering                | `writeProjectTree`                |
+| File materialization (core logic)       | `writeSourceFileContents`         |
 
+✅ Functions Still Needed to Fully Retire PackSource.cmake
+(Optional / cleanup / orchestration only)
+These are not replacements of logic, but structural glue that CMake implicitly provided.
 
-Phase 2: Release Finalization (Local Only)
+5. Orchestration Function (Optional but Recommended)
+Purpose:
+One function that calls the others in the correct order.
+Suggested Function:
 
-Purpose
-Used to:
+bool generateProjectSourceFile(...);
 
-Prepare a new release
-Increment VERSION
-Build and test the AppImage
-Verify runtime behavior
-Validate updater logic
+Responsibility:
 
-Command
-./deploy.sh --final
-Expected Behavior
+Open output file
+Create QTextStream
+Call:
 
-VERSION is incremented locally
-AppImage is built with the new version
-Full test suite runs
-No GitHub push occurs
+collectSourceFiles
+writeProjectSourceHeader
+writeProjectTree
+writeSourceFileContents
 
-Rules
 
-This step MUST pass before publishing
-You may repeat this step multiple times
-GitHub must remain unchanged
+Flush and close file
 
+⚠️ Not strictly required, but improves clarity and testability.
 
-Phase 3: Release Publishing (Explicit)
+6. Final Cleanup (Non‑functional)
+These are not functions, but required to fully remove CMake from runtime:
 
-Purpose
-Used to:
+Remove QProcess calls invoking CMake
+Remove references to PackSource.cmake
+Update comments / docs to reflect C++ implementation
+Optionally delete cmake/PackSource.cmake
 
-Publish a tested release
-Sync GitHub with the release state
-Make the updater detect the new version
 
-Command
-./deploy.sh --final --github
+✅ Final State (Truth Statement)
 
-Expected Behavior
+✅ All behavioral logic from cmake/PackSource.cmake is now implemented in C++
+✅ No runtime dependency on CMake is required
+✅ Remaining work is orchestration and cleanup only
+✅ No further “mystery functions” remain
 
-VERSION is committed
-GitHub is updated
-AppImage version matches GitHub VERSION
-Updater reports the new version
+If you want, next I can:
 
-Rules
+Write the single orchestration function
+Do a final CMake‑removal checklist
+Or produce a one‑page architectural summary for future maintainers
 
-Only run this after successful local testing
-This is the ONLY command that publishes a release
-Publishing without testing is forbidden
-
-
-VERSION Rules
-
-
-VERSION is the single source of truth
-Format: MAJOR.MINOR.PATCH
-VERSION MUST NOT be edited manually during normal work
-VERSION MUST only change during --final
-The AppImage filename MUST match VERSION
-GitHub /VERSION MUST match the published AppImage
-
-
-Formatting & Repository Rules
-
-Files
-
-Files without extensions (e.g. VERSION, LICENSE) are valid and tracked
-.gitignore is the only exclusion mechanism
-Do not rely on filename extensions for logic
-
-Documentation
-
-Keep README.md user‑facing
-Keep RELEASE.md process‑facing
-Update documentation freely during GitHub maintenance
-
-Commits
-
-GitHub maintenance commits may be frequent
-Release commits should be minimal and intentional
-Avoid mixing documentation fixes with release commits
-
-
-Safety Guarantees
-
-This workflow guarantees:
-
-No accidental releases
-No accidental GitHub pushes during testing
-No version drift between binary and updater
-Reproducible release artifacts
-Clear intent behind every command
-
-If something went wrong, it is always traceable by:
-
-VERSION
-Git history
-deploy logs
-
-
-Non‑Goals
-
-This project intentionally does NOT:
-
-Auto‑release from CI
-Auto‑publish on commit
-Infer release intent
-Hide release state
-
-Everything is explicit.
-
-Summary
-
-
-GitHub updates ≠ releases
-Testing ≠ publishing
-Publishing requires --final --github
-VERSION is authoritative
-deploy.sh enforces intent
-
-If you are unsure which command to run, do not publish.
-
-End of File
+Just tell me which.
 ===================================================================================================================================
 =============================== FILE: AI-Bash.md ===============================
 ===================================================================================================================================

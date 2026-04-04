@@ -56,6 +56,7 @@ set(SOURCES
     src/AboutDialog.cpp
     src/CMakeSourceParser.cpp
     src/GitIgnoreMatcher.cpp
+    src/LineNumberPlainTextEdit.cpp
 )
 
 set(HEADERS
@@ -72,6 +73,7 @@ set(HEADERS
     src/ProjectNode.h
     src/ProjectSourceDoc.h
     src/AboutDialog.h
+    src/LineNumberPlainTextEdit.h
 )
 
 set(DOC_FILES
@@ -168,6 +170,7 @@ if(BUILD_TESTS)
         src/AboutDialog.cpp
         src/CMakeSourceParser.cpp
         src/GitIgnoreMatcher.cpp
+        src/LineNumberPlainTextEdit.cpp
         resources/ProjectSourceDoc.qrc
     )
 
