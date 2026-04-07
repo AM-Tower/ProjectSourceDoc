@@ -65,7 +65,7 @@
 #              is best handled in a separate PowerShell or batch script.
 #
 # @author      Jeffrey Scott Flesher with the help of AI: Claude
-# @date        2026-03-31
+# @date        2026-04-04
 # @section     License  Unlicensed, MIT, or any.
 # clear; chmod +x deploy.sh && shellcheck deploy.sh && ./deploy.sh
 # deploy/ProjectSourceDoc-1.0.0-x86_64.AppImage

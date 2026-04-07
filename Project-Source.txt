@@ -87,6 +87,7 @@ Excluded dirs: build*; .rcc; CMakeFiles; .git; .qtcreator; engines; 0-Archive; A
 ├── VERSION
 ├── deploy.sh
 ├── error-log.txt
+├── install.sh
 └── message-queue.txt
 ===================================================================================================================================
 =============================== FILE: src/ProjectSourceExporter.cpp ===============================
@@ -1776,7 +1777,7 @@ struct ProjectNode
  * @brief       About dialog for the application.
  * @details     Displays application name, version, and build information.
  * @authors     Jeffrey Scott Flesher with the help of AI: Copilot
- * @date        2026-04-02
+ * @date        2026-04-04
  *********************************************************************************************************************************/
 #pragma once
 
@@ -1853,57 +1854,275 @@ public:
  * ********************************************************************************************************************************
  * @file        AboutDialog.cpp
  * @brief       About dialog implementation.
- * @details     Displays application information in a modal dialog without UI files.
+ * @details     Displays application information and troubleshooting diagnostics in a modal dialog
+ *              without UI files. Provides a copy button to copy all diagnostics to the clipboard.
  * @authors     Jeffrey Scott Flesher with the help of AI: Copilot
- * @date        2026-04-02
+ * @date        2026-04-04
  *********************************************************************************************************************************/
+
 #include "AboutDialog.h"
 
 #include <QApplication>
+#include <QClipboard>
 #include <QDialogButtonBox>
+#include <QFontDatabase>
 #include <QLabel>
+#include <QPlainTextEdit>
+#include <QStorageInfo>
+#include <QSysInfo>
 #include <QVBoxLayout>
+
+#include <QDir>
+#include <QFile>
+#include <QPushButton>
+#include <QTextStream>
+
+#if defined(Q_OS_WIN)
+#include <windows.h>
+#endif
+
+#if defined(Q_OS_MACOS)
+#include <mach/mach.h>
+#include <sys/sysctl.h>
+#endif
+
+/*!
+ * ****************************************************************************************************************************
+ * @brief   Convert a byte count to a human-readable string.
+ * @details Uses base-1024 units (KiB, MiB, GiB, TiB) and two decimals for readability.
+ * @param   bytes Byte count.
+ * @return  Human-readable size string.
+ *****************************************************************************************************************************/
+static QString formatBytes(qulonglong bytes)
+{
+    static const char *kUnits[] = {"B", "KiB", "MiB", "GiB", "TiB", "PiB"};
+    double value = static_cast<double>(bytes);
+    int unit = 0;
+
+    while (value >= 1024.0 && unit < 5)
+    {
+        value /= 1024.0;
+        ++unit;
+    }
+
+    if (unit == 0) return QStringLiteral("%1 %2").arg(static_cast<qulonglong>(value)).arg(QString::fromLatin1(kUnits[unit]));
+    return QStringLiteral("%1 %2").arg(value, 0, 'f', 2).arg(QString::fromLatin1(kUnits[unit]));
+}
+
+/*!
+ * ****************************************************************************************************************************
+ * @brief   Read the first line of a text file if it exists.
+ * @param   path Absolute file path.
+ * @return  First line of file or empty string.
+ *****************************************************************************************************************************/
+static QString readFirstLine(const QString &path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return {};
+    QTextStream in(&file);
+    return in.readLine().trimmed();
+}
+
+/*!
+ * ****************************************************************************************************************************
+ * @brief   Detect whether the app is running under WSL (Windows Subsystem for Linux).
+ * @details Detection is Linux-only. Returns "Yes" with optional distro info when detected.
+ * @return  WSL status string ("Yes ..."/"No") for Linux, otherwise empty string.
+ *****************************************************************************************************************************/
+static QString wslStatus()
+{
+#if defined(Q_OS_LINUX)
+    const QString distro = qEnvironmentVariable("WSL_DISTRO_NAME");
+    if (!distro.isEmpty()) return QStringLiteral("Yes (%1)").arg(distro);
+
+    const QString osRelease = readFirstLine(QStringLiteral("/proc/sys/kernel/osrelease"));
+    if (osRelease.contains(QStringLiteral("microsoft"), Qt::CaseInsensitive)) return QStringLiteral("Yes");
+
+    const QString versionLine = readFirstLine(QStringLiteral("/proc/version"));
+    if (versionLine.contains(QStringLiteral("microsoft"), Qt::CaseInsensitive)) return QStringLiteral("Yes");
+
+    return QStringLiteral("No");
+#else
+    return {};
+#endif
+}
+
+/*!
+ * ****************************************************************************************************************************
+ * @brief   Get total and available system memory.
+ * @details Uses platform-specific APIs for Windows/macOS and /proc/meminfo on Linux.
+ * @param   totalBytes Output total physical memory in bytes.
+ * @param   availBytes Output available/free memory in bytes (best-effort).
+ *****************************************************************************************************************************/
+static void systemMemory(qulonglong &totalBytes, qulonglong &availBytes)
+{
+    totalBytes = 0;
+    availBytes = 0;
+
+#if defined(Q_OS_WIN)
+    MEMORYSTATUSEX statex;
+    statex.dwLength = sizeof(statex);
+    if (GlobalMemoryStatusEx(&statex))
+    {
+        totalBytes = static_cast<qulonglong>(statex.ullTotalPhys);
+        availBytes = static_cast<qulonglong>(statex.ullAvailPhys);
+    }
+#elif defined(Q_OS_MACOS)
+    // Total memory
+    uint64_t memsize = 0;
+    size_t len = sizeof(memsize);
+    if (sysctlbyname("hw.memsize", &memsize, &len, nullptr, 0) == 0) totalBytes = static_cast<qulonglong>(memsize);
+
+           // Free memory (best-effort)
+    mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
+    vm_statistics64_data_t vmstat;
+    mach_port_t host = mach_host_self();
+
+    if (host_statistics64(host, HOST_VM_INFO64, reinterpret_cast<host_info64_t>(&vmstat), &count) == KERN_SUCCESS)
+    {
+        vm_size_t pageSize = 0;
+        host_page_size(host, &pageSize);
+        availBytes = static_cast<qulonglong>(vmstat.free_count) * static_cast<qulonglong>(pageSize);
+    }
+#elif defined(Q_OS_LINUX)
+    // Parse /proc/meminfo for MemTotal and MemAvailable (both in kB)
+    QFile file(QStringLiteral("/proc/meminfo"));
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return;
+
+    QTextStream in(&file);
+    qulonglong memTotalKb = 0;
+    qulonglong memAvailKb = 0;
+
+    while (!in.atEnd())
+    {
+        const QString line = in.readLine();
+        if (line.startsWith(QStringLiteral("MemTotal:"), Qt::CaseInsensitive))
+        {
+            const QStringList parts = line.split(QChar(' '), Qt::SkipEmptyParts);
+            if (parts.size() >= 2) memTotalKb = parts.at(1).toULongLong();
+        }
+        else if (line.startsWith(QStringLiteral("MemAvailable:"), Qt::CaseInsensitive))
+        {
+            const QStringList parts = line.split(QChar(' '), Qt::SkipEmptyParts);
+            if (parts.size() >= 2) memAvailKb = parts.at(1).toULongLong();
+        }
+
+        if (memTotalKb > 0 && memAvailKb > 0) break;
+    }
+
+    totalBytes = memTotalKb * 1024ULL;
+    availBytes = memAvailKb * 1024ULL;
+#endif
+}
+
+/*!
+ * ****************************************************************************************************************************
+ * @brief   Build a diagnostic report for troubleshooting.
+ * @details Includes application, Qt/runtime, OS/kernel, WSL (when applicable), storage, and memory.
+ * @return  Multi-line diagnostics report.
+ *****************************************************************************************************************************/
+static QString buildDiagnostics()
+{
+    const QString appName = QApplication::applicationName();
+    const QString appVersion = QApplication::applicationVersion();
+
+    QStringList lines;
+    lines << QStringLiteral("%1").arg(appName);
+    lines << QStringLiteral("Version: %1").arg(appVersion.isEmpty() ? QStringLiteral("(unknown)") : appVersion);
+    lines << QStringLiteral("Qt (runtime): %1").arg(QString::fromLatin1(qVersion()));
+    lines << QStringLiteral("Qt (build): %1").arg(QString::fromLatin1(QT_VERSION_STR));
+    lines << QStringLiteral("Build ABI: %1").arg(QSysInfo::buildAbi());
+    lines << QStringLiteral("CPU: %1").arg(QSysInfo::currentCpuArchitecture());
+    lines << QStringLiteral("Kernel: %1 %2").arg(QSysInfo::kernelType(), QSysInfo::kernelVersion());
+    lines << QStringLiteral("OS: %1").arg(QSysInfo::prettyProductName());
+    lines << QStringLiteral("Hostname: %1").arg(QSysInfo::machineHostName());
+    lines << QStringLiteral("App path: %1").arg(QCoreApplication::applicationFilePath());
+    lines << QStringLiteral("Working dir: %1").arg(QDir::currentPath());
+
+#if defined(Q_OS_LINUX)
+    lines << QStringLiteral("WSL: %1").arg(wslStatus());
+#endif
+
+           // Storage info (root + home)
+    const QStorageInfo rootStore(QDir::rootPath());
+    if (rootStore.isValid() && rootStore.isReady())
+    {
+        lines << QStringLiteral("Disk (root) total: %1").arg(formatBytes(static_cast<qulonglong>(rootStore.bytesTotal())));
+        lines << QStringLiteral("Disk (root) free: %1").arg(formatBytes(static_cast<qulonglong>(rootStore.bytesFree())));
+        lines << QStringLiteral("Disk (root) available: %1").arg(formatBytes(static_cast<qulonglong>(rootStore.bytesAvailable())));
+        lines << QStringLiteral("Disk (root) fs: %1").arg(QString::fromUtf8(rootStore.fileSystemType()));
+    }
+
+    const QStorageInfo homeStore(QDir::homePath());
+    if (homeStore.isValid() && homeStore.isReady())
+    {
+        lines << QStringLiteral("Disk (home) path: %1").arg(homeStore.rootPath());
+        lines << QStringLiteral("Disk (home) total: %1").arg(formatBytes(static_cast<qulonglong>(homeStore.bytesTotal())));
+        lines << QStringLiteral("Disk (home) free: %1").arg(formatBytes(static_cast<qulonglong>(homeStore.bytesFree())));
+        lines << QStringLiteral("Disk (home) available: %1").arg(formatBytes(static_cast<qulonglong>(homeStore.bytesAvailable())));
+        lines << QStringLiteral("Disk (home) fs: %1").arg(QString::fromUtf8(homeStore.fileSystemType()));
+    }
+
+           // Memory info
+    qulonglong totalMem = 0;
+    qulonglong availMem = 0;
+    systemMemory(totalMem, availMem);
+
+    if (totalMem > 0) lines << QStringLiteral("Memory total: %1").arg(formatBytes(totalMem));
+    if (availMem > 0) lines << QStringLiteral("Memory available: %1").arg(formatBytes(availMem));
+
+    return lines.join(QLatin1Char('\n'));
+}
 
 /*!
  * ****************************************************************************************************************************
  * @brief   Construct AboutDialog.
- * @details Builds a simple modal About dialog using standard Qt widgets.
+ * @details Builds a modal About dialog with a diagnostics text box and a copy button.
  * @param   parent Optional parent widget.
  *****************************************************************************************************************************/
-AboutDialog::AboutDialog(QWidget *parent)
-: QDialog(parent)
+AboutDialog::AboutDialog(QWidget *parent) : QDialog(parent)
 {
     setWindowTitle(tr("About"));
     setModal(true);
-    setMinimumWidth(420);
+    setMinimumWidth(520);
 
     const QString appName = QApplication::applicationName();
     const QString appVersion = QApplication::applicationVersion();
 
-    QLabel *titleLabel = new QLabel(QStringLiteral("<b>%1</b>").arg(appName), this);
-    QLabel *versionLabel = new QLabel(tr("Version %1").arg(appVersion), this);
-    QLabel *descriptionLabel =
-        new QLabel(
-            tr("Generate Project‑Source.txt from a project tree.<br><br>"
-               "This tool replaces legacy CMake PackSource scripts<br>"
-               "with a native C++ / Qt implementation.<br><br>"
-               "© 2026 Jeffrey Scott Flesher"),
-            this);
+    QLabel *titleLabel = new QLabel(QStringLiteral("%1").arg(appName), this);
+    QFont titleFont = titleLabel->font();
+    titleFont.setBold(true);
+    titleFont.setPointSize(titleFont.pointSize() + 2);
+    titleLabel->setFont(titleFont);
+
+    QLabel *versionLabel = new QLabel(tr("Version %1").arg(appVersion.isEmpty() ? QStringLiteral("(unknown)") : appVersion), this);
 
     titleLabel->setAlignment(Qt::AlignCenter);
     versionLabel->setAlignment(Qt::AlignCenter);
-    descriptionLabel->setAlignment(Qt::AlignCenter);
-    descriptionLabel->setWordWrap(true);
+
+    QPlainTextEdit *infoBox = new QPlainTextEdit(this);
+    infoBox->setReadOnly(true);
+    infoBox->setUndoRedoEnabled(false);
+    infoBox->setWordWrapMode(QTextOption::NoWrap);
+    infoBox->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    infoBox->setPlainText(buildDiagnostics());
 
     QDialogButtonBox *buttons = new QDialogButtonBox(QDialogButtonBox::Ok, this);
+    QPushButton *copyButton = buttons->addButton(tr("Copy"), QDialogButtonBox::ActionRole);
+
     connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
+    connect(copyButton, &QPushButton::clicked, this,
+            [infoBox]()
+            {
+                QClipboard *cb = QGuiApplication::clipboard();
+                if (cb) cb->setText(infoBox->toPlainText());
+            });
 
     QVBoxLayout *layout = new QVBoxLayout;
     layout->addWidget(titleLabel);
     layout->addWidget(versionLabel);
-    layout->addSpacing(12);
-    layout->addWidget(descriptionLabel);
-    layout->addStretch();
+    layout->addSpacing(10);
+    layout->addWidget(infoBox, 1);
     layout->addWidget(buttons);
 
     setLayout(layout);
@@ -2230,77 +2449,179 @@ class ProjectSourceGenerator
 /*!
  * ********************************************************************************************************************************
  * @file        MainWindowTheme.cpp
- * @brief       Implements theme-aware icon refresh for ProjectSource MainWindow.
- * @details     Refreshes icons when application palette/theme changes.
- *
+ * @brief       Implements theme persistence, theme application, and theme-aware UI refresh.
+ * @details     Centralizes theme menu creation, save/load of ThemeMode, palette application, and icon refresh
+ *              for menus/toolbars/tabs based on the active palette. Designed to be reusable across apps that
+ *              provide a Tools → Theme submenu.
  * @authors     Jeffrey Scott Flesher with the help of AI: Copilot
- * @date        2026-03-26
+ * @date        2026-04-05
  *********************************************************************************************************************************/
 #include "MainWindow.h"
 
-#include <QApplication>
 #include <QAction>
+#include <QActionGroup>
+#include <QApplication>
+#include <QColor>
 #include <QEvent>
+#include <QIcon>
 #include <QMenu>
-#include <QTabWidget>
+#include <QMenuBar>
+#include <QPalette>
+#include <QSettings>
+#include <QSignalBlocker>
 #include <QStyle>
 #include <QStyleFactory>
-#include <QSettings>
-#include <QStatusBar>
-#include <QColor>
+#include <QTabWidget>
+#include <QToolBar>
+#include <QToolButton>
 
-/*!
- * ********************************************************************************************************************************
- * @brief Refreshes UI elements that depend on the current palette (icons in menus/toolbars/tabs).
- * @details Updates icons in-place without rebuilding toolbars. Rebuilds MRU menu to refresh
- * per-item icons.
- *********************************************************************************************************************************/
-void MainWindow::refreshThemeUi()
+namespace
 {
-    if (m_openAction)          { m_openAction->setIcon(themedIcon(QStringLiteral("doc"))); }
-    if (m_projectSourceAction) { m_projectSourceAction->setIcon(themedIcon(QStringLiteral("update"))); }
-    if (m_exitAction)          { m_exitAction->setIcon(themedIcon(QStringLiteral("exit"))); }
-    if (m_usageAction)         { m_usageAction->setIcon(themedIcon(QStringLiteral("help"))); }
-    if (m_aboutAction)         { m_aboutAction->setIcon(themedIcon(QStringLiteral("help"))); }
-    rebuildRecentProjectsMenu();
-    if (m_tabs && m_tabs->count() > 0) { m_tabs->setTabIcon(0, themedIcon(QStringLiteral("log"))); }
-    if (m_tabs && m_tabs->count() > 1) { m_tabs->setTabIcon(1, themedIcon(QStringLiteral("settings"))); }
+    static constexpr const char *kSettingsThemeMode = "ui/themeMode";
 }
 
 /*!
- * ********************************************************************************************************************************
- * @brief Handles palette/theme changes at runtime.
- * @param event Change event.
- *********************************************************************************************************************************/
-void MainWindow::changeEvent(QEvent *event)
+ * ****************************************************************************************************************************
+ * @brief   Creates the Tools → Theme submenu.
+ * @details Creates System, Light, and Dark actions and wires them through applyThemeMode().
+ * @param   toolsMenu Tools menu that will own the Theme submenu.
+ *****************************************************************************************************************************/
+void MainWindow::createThemeMenu(QMenu *toolsMenu)
 {
-    QMainWindow::changeEvent(event);
+    if (!toolsMenu) return;
+
+    m_themeMenu = toolsMenu->addMenu(tr("Theme"));
+
+    m_themeGroup = new QActionGroup(this);
+    m_themeGroup->setExclusive(true);
+
+    m_themeSystemAction = m_themeMenu->addAction(tr("System"));
+    m_themeLightAction = m_themeMenu->addAction(tr("Light"));
+    m_themeDarkAction = m_themeMenu->addAction(tr("Dark"));
+
+    m_themeSystemAction->setCheckable(true);
+    m_themeLightAction->setCheckable(true);
+    m_themeDarkAction->setCheckable(true);
+
+    m_themeGroup->addAction(m_themeSystemAction);
+    m_themeGroup->addAction(m_themeLightAction);
+    m_themeGroup->addAction(m_themeDarkAction);
+
+    connect(m_themeSystemAction, &QAction::triggered, this, [this]() { applyThemeMode(ThemeMode::System, true); });
+    connect(m_themeLightAction, &QAction::triggered, this, [this]() { applyThemeMode(ThemeMode::Light, true); });
+    connect(m_themeDarkAction, &QAction::triggered, this, [this]() { applyThemeMode(ThemeMode::Dark, true); });
+}
+
+/*!
+ * ****************************************************************************************************************************
+ * @brief   Load the persisted theme mode from QSettings.
+ * @details Validates stored integer and defaults to System when invalid.
+ * @return  Persisted ThemeMode.
+ *****************************************************************************************************************************/
+ThemeMode MainWindow::loadThemeMode() const
+{
+    QSettings settings;
+    const int value = settings.value(kSettingsThemeMode, static_cast<int>(ThemeMode::System)).toInt();
+
+    switch (static_cast<ThemeMode>(value))
+    {
+    case ThemeMode::System: return ThemeMode::System;
+    case ThemeMode::Light:  return ThemeMode::Light;
+    case ThemeMode::Dark:   return ThemeMode::Dark;
+    }
+
+    return ThemeMode::System;
+}
+
+/*!
+ * ****************************************************************************************************************************
+ * @brief   Save the selected theme mode to persistent settings.
+ * @param   mode Selected theme mode.
+ *****************************************************************************************************************************/
+void MainWindow::saveThemeMode(ThemeMode mode)
+{
+    QSettings settings;
+    settings.setValue(kSettingsThemeMode, static_cast<int>(mode));
+}
+
+/*!
+ * ****************************************************************************************************************************
+ * @brief   Update the Theme menu checkmarks to match the specified theme mode.
+ * @details Blocks signals to prevent recursive triggers while updating checks.
+ * @param   mode Theme mode that should appear selected in the menu.
+ *****************************************************************************************************************************/
+void MainWindow::updateThemeMenuChecks(ThemeMode mode)
+{
+    if (!m_themeSystemAction || !m_themeLightAction || !m_themeDarkAction) return;
+
+    const QSignalBlocker b1(m_themeSystemAction);
+    const QSignalBlocker b2(m_themeLightAction);
+    const QSignalBlocker b3(m_themeDarkAction);
+
+    m_themeSystemAction->setChecked(mode == ThemeMode::System);
+    m_themeLightAction->setChecked(mode == ThemeMode::Light);
+    m_themeDarkAction->setChecked(mode == ThemeMode::Dark);
+}
+
+/*!
+ * ****************************************************************************************************************************
+ * @brief   Apply a theme mode and synchronize UI.
+ * @details Applies palette/style, optionally persists, updates checkmarks, and refreshes themed icons.
+ * @param   mode Theme mode to apply.
+ * @param   persist True to save the mode to QSettings.
+ *****************************************************************************************************************************/
+void MainWindow::applyThemeMode(ThemeMode mode, bool persist)
+{
+    if (mode == ThemeMode::Light) applyLightTheme();
+    else if (mode == ThemeMode::Dark) applyDarkTheme();
+    else applySystemTheme();
+
+    if (persist) saveThemeMode(mode);
+
+    updateThemeMenuChecks(mode);
+    refreshThemeUi();
+}
+
+/*!
+ * ****************************************************************************************************************************
+ * @brief   Restore the persisted theme mode from settings.
+ * @details Applies the stored theme at startup and syncs the theme menu checkmarks.
+ *****************************************************************************************************************************/
+void MainWindow::restoreThemeMode()
+{
+    applyThemeMode(loadThemeMode(), false);
+}
+
+/*!
+ * ****************************************************************************************************************************
+ * @brief   Retranslate only the Theme menu UI.
+ * @details Updates Theme menu title and Theme action texts.
+ *****************************************************************************************************************************/
+void MainWindow::retranslateThemeMenu()
+{
+    if (m_themeMenu) m_themeMenu->setTitle(tr("Theme"));
+    if (m_themeSystemAction) m_themeSystemAction->setText(tr("System"));
+    if (m_themeLightAction) m_themeLightAction->setText(tr("Light"));
+    if (m_themeDarkAction) m_themeDarkAction->setText(tr("Dark"));
+}
+
+/*!
+ * ****************************************************************************************************************************
+ * @brief   Handle palette/style/theme events to keep icons in sync.
+ * @details Refreshes theme-dependent icons and keeps theme menu checkmarks consistent with persisted mode.
+ * @param   event Change event.
+ *****************************************************************************************************************************/
+void MainWindow::handleThemeChangeEvent(QEvent *event)
+{
     if (!event) return;
 
     switch (event->type())
     {
-    case QEvent::LanguageChange:
-    {
-        // Retranslate UI text without rebuilding structure
-        if (m_openAction)        m_openAction->setText(tr("&Open…"));
-        if (m_projectSourceAction)
-            m_projectSourceAction->setText(tr("Create Project‑Source.txt"));
-        if (m_exitAction)        m_exitAction->setText(tr("E&xit"));
-        if (m_usageAction)       m_usageAction->setText(tr("Usage"));
-        if (m_aboutAction)       m_aboutAction->setText(tr("About"));
-
-               // Menus need title updates
-        if (m_recentMenu)        m_recentMenu->setTitle(tr("Open &Recent"));
-
-               // Status / tab text if needed later
-               // (icons are already handled elsewhere)
-        break;
-    }
-
     case QEvent::ApplicationPaletteChange:
     case QEvent::PaletteChange:
     case QEvent::ThemeChange:
     case QEvent::StyleChange:
+        updateThemeMenuChecks(loadThemeMode());
         refreshThemeUi();
         break;
 
@@ -2311,39 +2632,123 @@ void MainWindow::changeEvent(QEvent *event)
 
 /*!
  * ****************************************************************************************************************************
- * @brief Apply the system (default) theme.
- *
- * Clears any application-level palette or stylesheet overrides and restores the
- * platform’s default style and palette. When selected, the application follows
- * the operating system’s appearance (light/dark) automatically.
- *
- * This function triggers a palette change, which causes theme-aware icons and UI
- * elements to refresh via existing event handlers.
+ * @brief   Handles language, palette, theme, and style changes.
+ * @details Retranslates the Theme menu on language changes and refreshes theme UI on palette/style changes.
+ * @param   event Change event.
+ *****************************************************************************************************************************/
+void MainWindow::changeEvent(QEvent *event)
+{
+    QMainWindow::changeEvent(event);
+    if (!event) return;
+
+    if (event->type() == QEvent::LanguageChange)
+    {
+        retranslateThemeMenu();
+        return;
+    }
+
+    handleThemeChangeEvent(event);
+}
+
+/*!
+ * ****************************************************************************************************************************
+ * @brief   Refreshes UI elements that depend on the current palette.
+ * @details Updates icons in menus, toolbars, and tab widgets using theme-aware icons.
+ *****************************************************************************************************************************/
+void MainWindow::refreshThemeUi()
+{
+    if (menuBar())
+    {
+        const QList<QAction *> topActions = menuBar()->actions();
+        for (QAction *a : std::as_const(topActions))
+        {
+            refreshActionIcon(a);
+
+            if (QMenu *menu = a->menu())
+            {
+                const QList<QAction *> actions = menu->actions();
+                for (QAction *sub : std::as_const(actions))
+                {
+                    refreshActionIcon(sub);
+                    if (QMenu *subMenu = sub->menu())
+                    {
+                        const QList<QAction *> subActions = subMenu->actions();
+                        for (QAction *deep : std::as_const(subActions))
+                        {
+                            refreshActionIcon(deep);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    const QList<QToolBar *> bars = findChildren<QToolBar *>();
+    for (QToolBar *bar : std::as_const(bars))
+    {
+        const QList<QAction *> actions = bar->actions();
+        for (QAction *a : std::as_const(actions)) refreshActionIcon(a);
+
+        const QList<QToolButton *> buttons = bar->findChildren<QToolButton *>();
+        for (QToolButton *b : std::as_const(buttons))
+        {
+            const QString name = b->property("iconName").toString();
+            if (!name.isEmpty()) b->setIcon(themedIcon(name));
+        }
+    }
+
+    const QList<QTabWidget *> tabs = findChildren<QTabWidget *>();
+    for (QTabWidget *tw : std::as_const(tabs))
+    {
+        const QStringList names = tw->property("tabIconNames").toStringList();
+        const int count = qMin(names.size(), tw->count());
+        for (int i = 0; i < count; ++i)
+        {
+            tw->setTabIcon(i, themedIcon(names.at(i)));
+        }
+    }
+}
+
+/*!
+ * ****************************************************************************************************************************
+ * @brief   Refresh a QAction icon if it declares an "iconName" property.
+ * @param   action Action whose icon should be refreshed.
+ *****************************************************************************************************************************/
+void MainWindow::refreshActionIcon(QAction *action)
+{
+    if (!action) return;
+
+    const QString name = action->property("iconName").toString();
+    if (name.isEmpty()) return;
+
+    action->setIcon(themedIcon(name));
+}
+
+/*!
+ * ****************************************************************************************************************************
+ * @brief   Apply the system (default) theme.
+ * @details Clears stylesheet overrides and restores the platform default style (if captured) and palette.
  *****************************************************************************************************************************/
 void MainWindow::applySystemTheme()
 {
     qApp->setStyleSheet(QString());
-    // Restore original platform style if we previously forced Fusion.
+
     if (!m_platformStyleName.isEmpty())
     {
         if (QStyle *s = QStyleFactory::create(m_platformStyleName)) qApp->setStyle(s);
     }
+
     qApp->setPalette(qApp->style()->standardPalette());
 }
 
 /*!
  * ****************************************************************************************************************************
- * @brief Apply a forced light theme.
- *
- * Applies a light application palette suitable for bright UI environments.
- * This overrides the system theme until changed by the user.
- *
- * Theme-aware icons and widgets are refreshed automatically through palette
- * change events.
+ * @brief   Apply a forced light theme.
+ * @details Applies a light palette and uses Fusion style for consistency.
  *****************************************************************************************************************************/
 void MainWindow::applyLightTheme()
 {
-    qApp->setStyle(QStyleFactory::create("Fusion"));
+    qApp->setStyle(QStyleFactory::create(QStringLiteral("Fusion")));
 
     QPalette p;
     p.setColor(QPalette::Window, QColor(245, 245, 245));
@@ -2357,18 +2762,13 @@ void MainWindow::applyLightTheme()
 }
 
 /*!
- * ********************************************************************************************************************************
- * @brief Apply a forced dark theme.
- *
- * Applies a dark application palette designed for low-light environments.
- * This overrides the system theme until changed by the user.
- *
- * Theme-aware icons and widgets are refreshed automatically through palette
- * change events.
- ***********************************************************************************************************************************/
+ * ****************************************************************************************************************************
+ * @brief   Apply a forced dark theme.
+ * @details Applies a dark palette and uses Fusion style for consistency.
+ *****************************************************************************************************************************/
 void MainWindow::applyDarkTheme()
 {
-    qApp->setStyle(QStyleFactory::create("Fusion"));
+    qApp->setStyle(QStyleFactory::create(QStringLiteral("Fusion")));
 
     QPalette p;
     p.setColor(QPalette::Window, QColor(32, 32, 32));
@@ -2382,19 +2782,22 @@ void MainWindow::applyDarkTheme()
 }
 
 /*!
- * ********************************************************************************************************************************
- * @brief Save the selected theme mode to persistent settings.
- * @param mode Selected theme mode.
- ***********************************************************************************************************************************/
-void MainWindow::saveThemeMode(ThemeMode mode)
+ * ****************************************************************************************************************************
+ * @brief   Returns a theme-aware icon from application resources.
+ * @details Selects :/icons/light/<name>.svg or :/icons/dark/<name>.svg based on current palette.
+ * @param   baseName Base icon name without extension.
+ * @return  Theme-aware icon.
+ *****************************************************************************************************************************/
+QIcon MainWindow::themedIcon(const QString &baseName) const
 {
-    QSettings settings;
-    settings.setValue(kSettingsThemeMode, static_cast<int>(mode));
+    const bool dark = qApp->palette().color(QPalette::Window).lightness() < 128;
+    const QString theme = dark ? QStringLiteral("dark") : QStringLiteral("light");
+    return QIcon(QStringLiteral(":/icons/%1/%2.svg").arg(theme, baseName));
 }
 
 /*!
  * ********************************************************************************************************************************
- * End of MainWindowTheme.cpp
+ * @brief End of MainWindowTheme.cpp
  *********************************************************************************************************************************/
 
 ===================================================================================================================================
@@ -2453,7 +2856,7 @@ private:
  * @file        MainWindow.h
  * @brief       Declares the main application window for ProjectSource.
  * @details     MainWindow owns and orchestrates the entire Qt Widgets UI for the ProjectSource
- *              application.
+ *              application, while delegating all theme handling to MainWindowTheme.cpp.
  *
  *              Responsibilities include:
  *              - File menu (Open project, Open Recent, Exit)
@@ -2461,62 +2864,53 @@ private:
  *              - Help menu (Usage, About)
  *              - Central tabs (Log + Settings)
  *
- *              The Settings tab supports:
- *              - Editable project folder list (per‑project selection)
- *              - Include file extensions (comma/space/semicolon separated)
- *              - Exclude folder patterns with browse support
- *              - Backup base folder selection with timestamped backups
- *
- *              All per‑project settings are persisted using QSettings and applied when generating
- *              Project‑Source.txt and performing project backups.
+ *              Theme behavior, persistence, icon refresh, and Theme menu creation are implemented
+ *              in MainWindowTheme.cpp to allow reuse across applications.
  *
  * @authors     Jeffrey Scott Flesher with the help of AI: Copilot
  * @date        2026-04-04
  *********************************************************************************************************************************/
 #pragma once
 
-#include <QLabel>
-#include <QLineEdit>
 #include <QMainWindow>
 #include <QPlainTextEdit>
+#include <QProgressBar>
 #include <QPushButton>
 #include <QString>
 #include <QStringList>
 
 /* Forward declarations */
 class QAction;
+class QActionGroup;
+class QTabWidget;
+class QLabel;
+class QLineEdit;
 class QListWidget;
 class QMenu;
-class QProgressBar;
-class QTabWidget;
 class QToolBar;
 class StatusBarQueue;
-class QActionGroup;
 class QCloseEvent;
-
-static constexpr const char *kSettingsThemeMode = "ui/themeMode"; ///< Settings key for persisted theme mode
+class QIcon;
 
 /*!
- * ********************************************************************************************************************************
- * @brief Theme Mode
- *********************************************************************************************************************************/
+ * ****************************************************************************************************************************
+ * @brief Theme mode selection.
+ *****************************************************************************************************************************/
 enum class ThemeMode
 {
-    System, ///< Follow the operating system theme
-    Light,  ///< Force light application theme
-    Dark    ///< Force dark application theme
+    System, /// < Follow the operating system theme
+    Light,  /// < Force light application theme
+    Dark    /// < Force dark application theme
 };
 
 /*!
- * ********************************************************************************************************************************
- * @class MainWindow
- * @brief Primary GUI window for the ProjectSource application.
+ * ****************************************************************************************************************************
+ * @class   MainWindow
+ * @brief   Primary GUI window for the ProjectSource application.
  *
- * @details MainWindow is responsible for all user‑facing interactions and delegates project
- *          source generation and backup logic to ProjectSourceExporter.
- *
- * @public
- *********************************************************************************************************************************/
+ * @details MainWindow is responsible for all user‑facing interactions and delegates
+ *          project source generation and backup logic to ProjectSourceExporter.
+ *****************************************************************************************************************************/
 class MainWindow final : public QMainWindow
 {
         Q_OBJECT
@@ -2525,211 +2919,187 @@ class MainWindow final : public QMainWindow
     public:
         //! Construct the main application window.
         explicit MainWindow(QWidget *parent = nullptr);
-
-        //! Destructor for MainWindow.
+        //! Destroy the main application window.
         ~MainWindow() override;
 
     protected:
-        //! Handle theme and language changes.
+        //! Handle language, palette, and style change events.
         void changeEvent(QEvent *event) override;
-
         //! Persist window geometry and state on close.
         void closeEvent(QCloseEvent *event) override;
 
     private slots:
-        //! Triggered when the user selects "Open Project".
+        //! Triggered when the user selects File → Open.
         void onOpenTriggered();
-
-        //! Triggered when the user selects "Create Project‑Source.txt".
+        //! Triggered when the user selects Tools → Create Project‑Source.txt.
         void onProjectSourceTriggered();
-
         //! Triggered when the user selects a recent project.
         void onOpenRecentTriggered();
-
-        //! Clears the recent project list.
+        //! Clear the recent project list.
         void onClearRecentTriggered();
-
         //! Browse for a project folder to add to the settings tab.
         void onBrowseProjectFolder();
-
         //! Remove the selected project folder from the settings tab.
         void onRemoveProjectFolder();
-
         //! Browse for an exclude folder pattern.
         void onBrowseExcludeFolder();
-
         //! Remove the selected exclude folder entry.
         void onRemoveExcludeFolder();
-
         //! Show the About dialog.
         void showAboutDialog();
 
     private:
-        /* --------------------------- Core UI --------------------------- */
+        /* --------------------------- Theme (implemented in MainWindowTheme.cpp) --------------------------- */
 
-        //! Create all QAction instances.
-        void createActions();
-
-        //! Create all application menus.
-        void createMenus();
-
-        //! Create the main toolbar.
-        void createToolbar();
-
-        //! Create the main tab widget (Log + Settings).
-        void createTabs();
-
-        //! Create the status bar and progress UI.
-        void createStatusBar();
-
-        //! Begin resetting the log view.
-        void beginLogReset();
-
-        //! Append text to the log view.
-        void appendToLog(const QString &text);
-
-        //! Display a file inside the log tab with a header.
-        void showFileInLogTab(const QString &path, const QString &header);
-
-        //! Return a themed icon based on the current UI theme.
-        QIcon themedIcon(const QString &baseName) const;
-
-        //! Open a project folder and optionally show CMakeLists.txt.
-        bool openProjectFolder(const QString &folderPath, bool showCMakeIfPresent);
-
-        //! Load recent projects from persistent storage.
-        void loadRecentProjects();
-
-        //! Save recent projects to persistent storage.
-        void saveRecentProjects() const;
-
-        //! Add a project to the recent list.
-        void addRecentProject(const QString &folderPath);
-
-        //! Rebuild the recent projects menu.
-        void rebuildRecentProjectsMenu();
-
-        //! Refresh UI elements after theme changes.
-        void refreshThemeUi();
-
-        //! Apply the system (default) theme.
-        void applySystemTheme();
-
-        //! Apply a forced light theme.
-        void applyLightTheme();
-
-        //! Apply a forced dark theme.
-        void applyDarkTheme();
-
-        //! Save the selected theme mode to persistent settings.
-        void saveThemeMode(ThemeMode mode);
-
+               //! Create the Tools → Theme submenu.
+        void createThemeMenu(QMenu *toolsMenu);
+        //! Apply a theme mode and synchronize UI state.
+        void applyThemeMode(ThemeMode mode, bool persist);
         //! Restore the persisted theme mode from settings.
         void restoreThemeMode();
-
-        //! Update the Theme menu checkmarks to match the specified theme mode.
+        //! Load the persisted theme mode from settings.
+        ThemeMode loadThemeMode() const;
+        //! Save the selected theme mode to settings.
+        void saveThemeMode(ThemeMode mode);
+        //! Update Theme menu checkmarks.
         void updateThemeMenuChecks(ThemeMode mode);
+        //! Retranslate Theme menu text.
+        void retranslateThemeMenu();
+        //! Handle palette/style/theme change events.
+        void handleThemeChangeEvent(QEvent *event);
+        //! Refresh all theme‑aware UI elements.
+        void refreshThemeUi();
+        //! Apply the system (default) theme.
+        void applySystemTheme();
+        //! Apply a forced light theme.
+        void applyLightTheme();
+        //! Apply a forced dark theme.
+        void applyDarkTheme();
+        //! Refresh a QAction icon if it declares an "iconName" property.
+        void refreshActionIcon(QAction *action);
+        //! Return a theme‑aware icon.
+        QIcon themedIcon(const QString &baseName) const;
+        //! Load and validate a project tree (informational only).
+        void loadProjectTree(const QString &projectRoot);
 
+        /* --------------------------- Core UI --------------------------- */
+
+               //! Create all QAction instances.
+        void createActions();
+        //! Create the menu bar.
+        void createMenus();
+        //! Create the main toolbar.
+        void createToolbar();
+        //! Create the central tab widget (Log + Settings).
+        void createTabs();
+        //! Create the status bar.
+        void createStatusBar();
         //! Restore persisted window geometry and state.
         void restoreWindowState();
-
         //! Persist window geometry and state.
         void saveWindowState() const;
 
-        //! Loads and analyzes a project folder at runtime.
-        void loadProjectTree(const QString &projectRoot);
+        /* --------------------------- Log --------------------------- */
 
+               //! Begin resetting the log view.
+        void beginLogReset();
+        //! Append text to the log view.
+        void appendToLog(const QString &text);
+        //! Display a file in the log tab.
+        void showFileInLogTab(const QString &path, const QString &header);
+
+        /* --------------------------- Projects --------------------------- */
+
+               //! Open a project folder and optionally show CMakeLists.txt.
+        bool openProjectFolder(const QString &folderPath, bool showCMakeIfPresent);
+        //! Load recent projects from settings.
+        void loadRecentProjects();
+        //! Save recent projects to settings.
+        void saveRecentProjects() const;
+        //! Add a project to the recent list.
+        void addRecentProject(const QString &folderPath);
+        //! Rebuild the recent projects menu.
+        void rebuildRecentProjectsMenu();
         //! Set the currently active project.
         void setActiveProject(const QString &projectRoot, bool updateSettingsSelection);
 
         /* --------------------------- Settings Tab --------------------------- */
 
-        //! Create the settings tab UI.
+               //! Create the settings tab UI.
         void createSettingsTab();
-
         //! Load project folders into the settings tab.
         void loadProjectFoldersForSettingsTab();
-
         //! Save project folders from the settings tab.
         void saveProjectFoldersFromSettingsTab() const;
-
         //! Load settings for a specific project.
         void loadSettingsForProject(const QString &projectRoot);
-
         //! Save settings for a specific project.
         void saveSettingsForProject(const QString &projectRoot) const;
-
         //! Return the currently selected project in the settings tab.
         QString currentSettingsProject() const;
-
         //! Enable or disable the settings panel.
         void setSettingsPanelEnabled(bool enabled);
 
-        //! Normalize an extension string.
-        static QString normalizeExt(const QString &ext);
-
-        //! Parse extension text into a QStringList.
+               //! Parse extension text into a normalized QStringList.
         static QStringList parseExtensionsText(const QString &text);
-
         //! Default include extensions.
         static QStringList defaultIncludeExts();
-
         //! Default excluded directories.
         static QStringList defaultExcludeDirs();
-
-        //! Extract exclude directory patterns from a project's .gitignore file.
+        //! Extract exclude directories from .gitignore.
         static QStringList excludeDirsFromGitignore(const QString &projectRoot);
 
     private:
         /* --------------------------- Core Members --------------------------- */
 
-        QTabWidget *m_tabs{nullptr};            ///< Main tab widget containing Log and Settings tabs
-        StatusBarQueue *m_statusQueue{nullptr}; ///< Queued status bar message handler
-        QPlainTextEdit *m_logView{nullptr};     ///< Log output text view
-        QProgressBar *m_logProgress{nullptr};   ///< Progress indicator for log operations
-        bool m_logResetPending{false};          ///< Indicates a pending log reset
-        QString m_openProjectRoot;              ///< Root path of the opened project
-        QString m_currentLogFilePath;           ///< Currently displayed log file path
-        QString m_activeProjectRoot;            ///< Currently active project root path
+        QTabWidget *m_tabs{nullptr};                   /// < Main tab widget
+        StatusBarQueue *m_statusQueue{nullptr};        /// < Status bar message queue
+        QPlainTextEdit *m_logView{nullptr};             /// < Log output view
+        QProgressBar *m_logProgress{nullptr};           /// < Log progress indicator
+        bool m_logResetPending{false};                  /// < Pending log reset flag
 
-        QAction *m_openAction{nullptr};          ///< Open project action
-        QAction *m_projectSourceAction{nullptr}; ///< Create Project‑Source.txt action
-        QAction *m_exitAction{nullptr};          ///< Exit application action
-        QAction *m_usageAction{nullptr};         ///< Usage/help action
-        QAction *m_aboutAction{nullptr};         ///< About dialog action
-        QAction *m_clearRecentAction{nullptr};   ///< Clear recent projects action
+        QString m_openProjectRoot;                      /// < Last opened project root
+        QString m_currentLogFilePath;                   /// < Currently displayed log file
+        QString m_activeProjectRoot;                    /// < Active project root
 
-        QAction *m_themeSystemAction{nullptr}; ///< System theme selection action
-        QAction *m_themeLightAction{nullptr};  ///< Light theme selection action
-        QAction *m_themeDarkAction{nullptr};   ///< Dark theme selection action
-        QActionGroup *m_themeGroup{nullptr};   ///< Exclusive theme action group
+        QAction *m_openAction{nullptr};                 /// < Open project action
+        QAction *m_projectSourceAction{nullptr};        /// < Create Project‑Source.txt action
+        QAction *m_exitAction{nullptr};                 /// < Exit application action
+        QAction *m_usageAction{nullptr};                /// < Usage/help action
+        QAction *m_aboutAction{nullptr};                /// < About dialog action
+        QAction *m_clearRecentAction{nullptr};          /// < Clear recent projects action
 
-        QString m_platformStyleName;  ///< Name of the platform style in use
-        QMenu *m_recentMenu{nullptr}; ///< Recent projects menu
-        QToolBar *m_toolbar{nullptr}; ///< Main application toolbar
-        QStringList m_recentProjects; ///< List of recently opened projects
+        QMenu *m_themeMenu{nullptr};                    /// < Tools → Theme submenu
+        QAction *m_themeSystemAction{nullptr};          /// < System theme action
+        QAction *m_themeLightAction{nullptr};           /// < Light theme action
+        QAction *m_themeDarkAction{nullptr};            /// < Dark theme action
+        QActionGroup *m_themeGroup{nullptr};            /// < Exclusive theme action group
+        QString m_platformStyleName;                    /// < Platform default style name
 
-        /* --------------------------- Settings Tab Widgets --------------------------- */
+        QMenu *m_recentMenu{nullptr};                   /// < Recent projects menu
+        QToolBar *m_toolbar{nullptr};                   /// < Main toolbar
+        QStringList m_recentProjects;                   /// < Recent project list
 
-        QWidget *m_settingsTab{nullptr};                ///< Settings tab container widget
-        QListWidget *m_projectFoldersList{nullptr};     ///< List of project folders
-        QPushButton *m_addProjectFolderBtn{nullptr};    ///< Add project folder button
-        QPushButton *m_removeProjectFolderBtn{nullptr}; ///< Remove project folder button
-        QLineEdit *m_includeExtEdit{nullptr};           ///< Include extensions input
-        QListWidget *m_excludeFoldersList{nullptr};     ///< Excluded folders list
-        QPushButton *m_addExcludeBrowseBtn{nullptr};    ///< Browse exclude folder button
-        QPushButton *m_removeExcludeBtn{nullptr};       ///< Remove exclude folder button
-        QLineEdit *m_backupFolderEdit{nullptr};         ///< Backup base folder input
-        QPushButton *m_backupBrowseBtn{nullptr};        ///< Browse backup folder button
-        QString m_settingsSelectedProject;              ///< Currently selected settings project
-        QLabel *m_cursorPosLabel{nullptr};              ///< Cursor position status label
+        /* --------------------------- Settings Widgets --------------------------- */
+
+        QWidget *m_settingsTab{nullptr};                /// < Settings tab widget
+        QListWidget *m_projectFoldersList{nullptr};     /// < Project folders list
+        QPushButton *m_addProjectFolderBtn{nullptr};    /// < Add project folder button
+        QPushButton *m_removeProjectFolderBtn{nullptr}; /// < Remove project folder button
+        QLineEdit *m_includeExtEdit{nullptr};            /// < Include extensions input
+        QListWidget *m_excludeFoldersList{nullptr};     /// < Excluded folders list
+        QPushButton *m_addExcludeBrowseBtn{nullptr};    /// < Browse exclude folder button
+        QPushButton *m_removeExcludeBtn{nullptr};       /// < Remove exclude folder button
+        QLineEdit *m_backupFolderEdit{nullptr};          /// < Backup folder input
+        QPushButton *m_backupBrowseBtn{nullptr};        /// < Browse backup folder button
+
+        QLabel *m_cursorPosLabel{nullptr};              /// < Cursor position label
 };
 
 /*!
  * ********************************************************************************************************************************
  * @brief End of MainWindow.h
  *********************************************************************************************************************************/
-
 ===================================================================================================================================
 =============================== FILE: src/StatusBarQueue.cpp ===============================
 ===================================================================================================================================
@@ -3494,6 +3864,7 @@ int main(int argc, char *argv[])
 #include <LineNumberPlainTextEdit.h>
 #include <QGuiApplication>
 #include <QScreen>
+#include <QLineEdit>
 
 #include "AboutDialog.h"
 #include "AppLogUtils.h"
@@ -3502,13 +3873,16 @@ int main(int argc, char *argv[])
 #include "StatusBarQueue.h"
 #include "ProjectPaths.h"
 
-/* ------------------------------------------------------------------------------------------------
- * Persistent settings keys
- * ------------------------------------------------------------------------------------------------ */
-static constexpr const char *kSettingsLastFolder = "ui/lastProjectFolder";
-static constexpr const char *kSettingsRecentList = "ui/recentProjectFolders";
-static constexpr const char *kSettingsProjectFolders = "ui/projectFolders";
-static constexpr int kMaxRecentProjects = 10;
+namespace
+{
+    /* ------------------------------------------------------------------------------------------------
+     * Persistent settings keys
+     * ------------------------------------------------------------------------------------------------ */
+    static constexpr const char *kSettingsLastFolder = "ui/lastProjectFolder";
+    static constexpr const char *kSettingsRecentList = "ui/recentProjectFolders";
+    static constexpr const char *kSettingsProjectFolders = "ui/projectFolders";
+    static constexpr int kMaxRecentProjects = 10;
+}
 
 /*!
  * ****************************************************************************************************************************
@@ -3606,19 +3980,6 @@ void MainWindow::closeEvent(QCloseEvent *event)
 
 /*!
  * ********************************************************************************************************************************
- * @brief        Returns a theme‑aware icon from application resources.
- *********************************************************************************************************************************/
-QIcon MainWindow::themedIcon(const QString &baseName) const
-{
-    const bool dark = qApp->palette().color(QPalette::Window).lightness() < 128;
-
-    const QString theme = dark ? QStringLiteral("dark") : QStringLiteral("light");
-
-    return QIcon(QStringLiteral(":/icons/%1/%2.svg").arg(theme, baseName));
-}
-
-/*!
- * ********************************************************************************************************************************
  * @brief        Loads MRU list and last project folder from QSettings.
  *********************************************************************************************************************************/
 void MainWindow::loadRecentProjects()
@@ -3682,9 +4043,9 @@ void MainWindow::addRecentProject(const QString &folderPath)
 }
 
 /*!
- * ********************************************************************************************************************************
- * @brief        Rebuilds the File → Open Recent menu.
- *********************************************************************************************************************************/
+ * ****************************************************************************************************************************
+ * @brief Rebuilds the File → Open Recent menu.
+ *****************************************************************************************************************************/
 void MainWindow::rebuildRecentProjectsMenu()
 {
     if (!m_recentMenu) return;
@@ -3700,7 +4061,9 @@ void MainWindow::rebuildRecentProjectsMenu()
 
     for (const QString &path : std::as_const(m_recentProjects))
     {
-        QAction *a = m_recentMenu->addAction(themedIcon("doc"), path);
+        QAction *a = m_recentMenu->addAction(path);
+        a->setProperty("iconName", QStringLiteral("doc"));
+        a->setIcon(themedIcon(QStringLiteral("doc")));
         a->setData(path);
         connect(a, &QAction::triggered, this, &MainWindow::onOpenRecentTriggered);
     }
@@ -3717,32 +4080,39 @@ void MainWindow::rebuildRecentProjectsMenu()
 }
 
 /*!
- * ********************************************************************************************************************************
- * @brief        Creates application actions.
- *********************************************************************************************************************************/
+ * ****************************************************************************************************************************
+ * @brief Creates application actions.
+ *****************************************************************************************************************************/
 void MainWindow::createActions()
 {
-    m_openAction = new QAction(themedIcon("doc"), tr("&Open…"), this);
+    m_openAction = new QAction(themedIcon(QStringLiteral("doc")), tr("&Open…"), this);
+    m_openAction->setProperty("iconName", QStringLiteral("doc"));
     connect(m_openAction, &QAction::triggered, this, &MainWindow::onOpenTriggered);
 
-    m_projectSourceAction = new QAction(themedIcon("update"), tr("Create Project‑Source.txt"), this);
+    m_projectSourceAction = new QAction(themedIcon(QStringLiteral("update")), tr("Create Project‑Source.txt"), this);
+    m_projectSourceAction->setProperty("iconName", QStringLiteral("update"));
     connect(m_projectSourceAction, &QAction::triggered, this, &MainWindow::onProjectSourceTriggered);
 
-    m_exitAction = new QAction(themedIcon("exit"), tr("E&xit"), this);
+    m_exitAction = new QAction(themedIcon(QStringLiteral("exit")), tr("E&xit"), this);
+    m_exitAction->setProperty("iconName", QStringLiteral("exit"));
     connect(m_exitAction, &QAction::triggered, this, &QWidget::close);
 
-    m_usageAction = new QAction(themedIcon("help"), tr("Usage"), this);
+    m_usageAction = new QAction(themedIcon(QStringLiteral("help")), tr("Usage"), this);
+    m_usageAction->setProperty("iconName", QStringLiteral("help"));
     connect(m_usageAction, &QAction::triggered, this, [this]() { psd::docs::showUsageDialog(this); });
 
-    m_aboutAction = new QAction(themedIcon("help"), tr("About"), this);
-    connect(m_aboutAction, &QAction::triggered, this, [this]() { AboutDialog dlg(this); dlg.exec(); });}
+    m_aboutAction = new QAction(themedIcon(QStringLiteral("help")), tr("About"), this);
+    m_aboutAction->setProperty("iconName", QStringLiteral("help"));
+    connect(m_aboutAction, &QAction::triggered, this, [this]() { AboutDialog dlg(this); dlg.exec(); });
+}
 
 /*!
- * ********************************************************************************************************************************
- * @brief        Creates the menu bar.
- *********************************************************************************************************************************/
+ * ****************************************************************************************************************************
+ * @brief Creates the menu bar.
+ *****************************************************************************************************************************/
 void MainWindow::createMenus()
 {
+    // File
     QMenu *fileMenu = menuBar()->addMenu(tr("&File"));
     fileMenu->addAction(m_openAction);
 
@@ -3752,83 +4122,54 @@ void MainWindow::createMenus()
     fileMenu->addSeparator();
     fileMenu->addAction(m_exitAction);
 
+    // Tools
     QMenu *toolsMenu = menuBar()->addMenu(tr("&Tools"));
     toolsMenu->addAction(m_projectSourceAction);
 
-    /* ===================== Theme submenu ===================== */
-    QMenu *themeMenu = toolsMenu->addMenu(tr("Theme"));
+    // ✅ Theme injected here — NOT created here
+    createThemeMenu(toolsMenu);
 
-    m_themeGroup = new QActionGroup(this);
-    m_themeGroup->setExclusive(true);
-
-    m_themeSystemAction = themeMenu->addAction(tr("System"));
-    m_themeLightAction  = themeMenu->addAction(tr("Light"));
-    m_themeDarkAction   = themeMenu->addAction(tr("Dark"));
-
-    m_themeSystemAction->setCheckable(true);
-    m_themeLightAction->setCheckable(true);
-    m_themeDarkAction->setCheckable(true);
-
-    m_themeGroup->addAction(m_themeSystemAction);
-    m_themeGroup->addAction(m_themeLightAction);
-    m_themeGroup->addAction(m_themeDarkAction);
-
-    /* -------------------- Wiring -------------------- */
-    connect(m_themeSystemAction, &QAction::triggered, this, [this]() { applySystemTheme(); saveThemeMode(ThemeMode::System); });
-    connect(m_themeLightAction, &QAction::triggered, this, [this]()  { applyLightTheme(); saveThemeMode(ThemeMode::Light); });
-    connect(m_themeDarkAction, &QAction::triggered, this, [this]()   { applyDarkTheme(); saveThemeMode(ThemeMode::Dark); });
-
+    // Help
     QMenu *helpMenu = menuBar()->addMenu(tr("&Help"));
     helpMenu->addAction(m_usageAction);
     helpMenu->addAction(m_aboutAction);
 }
 
 /*!
- * ********************************************************************************************************************************
- * @brief        Creates the main toolbar.
- *********************************************************************************************************************************/
+ * ****************************************************************************************************************************
+ * @brief Creates the main toolbar.
+ *****************************************************************************************************************************/
 void MainWindow::createToolbar()
 {
     m_toolbar = addToolBar(tr("Main Toolbar"));
     m_toolbar->setMovable(false);
 
-    // Open
     m_toolbar->addAction(m_openAction);
 
-    // Recent (dropdown) — uses the same menu as File → Open Recent
     auto *recentBtn = new QToolButton(m_toolbar);
     recentBtn->setText(tr("Recent"));
+    recentBtn->setProperty("iconName", QStringLiteral("doc"));
     recentBtn->setIcon(themedIcon(QStringLiteral("doc")));
     recentBtn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     recentBtn->setPopupMode(QToolButton::InstantPopup);
-
-    // Wire directly to the existing File menu's recent menu
-    // (rebuildRecentProjectsMenu() updates m_recentMenu's contents in place)
     recentBtn->setMenu(m_recentMenu);
-
     m_toolbar->addWidget(recentBtn);
 
     m_toolbar->addSeparator();
-
-    // Create Project‑Source
     m_toolbar->addAction(m_projectSourceAction);
-
     m_toolbar->addSeparator();
-
-    // Exit
     m_toolbar->addAction(m_exitAction);
 }
 
 /*!
- * ********************************************************************************************************************************
- * @brief        Creates the central tab widget (Log + Settings).
- *********************************************************************************************************************************/
+ * ****************************************************************************************************************************
+ * @brief Creates the central tab widget (Log + Settings).
+ *****************************************************************************************************************************/
 void MainWindow::createTabs()
 {
     m_tabs = new QTabWidget(this);
     setCentralWidget(m_tabs);
 
-    /* ------------------------------ Log tab ------------------------------ */
     QWidget *logTab = new QWidget(this);
     QVBoxLayout *layout = new QVBoxLayout(logTab);
 
@@ -3840,23 +4181,21 @@ void MainWindow::createTabs()
     m_logView->setReadOnly(true);
     m_logView->setWordWrapMode(QTextOption::NoWrap);
     m_logView->setUndoRedoEnabled(false);
-
     layout->addWidget(m_logView, 1);
-    m_tabs->addTab(logTab, themedIcon("log"), tr("Log"));
 
-    /* ---------------------------- Settings tab ---------------------------- */
+    m_tabs->addTab(logTab, themedIcon(QStringLiteral("log")), tr("Log"));
+
     createSettingsTab();
 
-    /* -------------------- Cursor position → status bar -------------------- */
+    m_tabs->setProperty("tabIconNames", QStringList{QStringLiteral("log"), QStringLiteral("settings")});
+
     connect(m_logView, &QPlainTextEdit::cursorPositionChanged, this,
             [this]()
             {
                 if (!m_cursorPosLabel) return;
-
                 QTextCursor cursor = m_logView->textCursor();
                 const int line = cursor.blockNumber() + 1;
                 const int column = cursor.positionInBlock() + 1;
-
                 m_cursorPosLabel->setText(tr("Ln %1, Col %2").arg(line).arg(column));
             });
 }
@@ -4566,54 +4905,6 @@ void MainWindow::onProjectSourceTriggered()
     }
 
     showFileInLogTab(outPath, tr("Project-Source.txt (%1)").arg(outPath));
-}
-
-/*!
- * ********************************************************************************************************************************
- * @brief Restore the persisted theme mode from settings.
- *
- * Defaults to system theme if no value is stored.
- * *******************************************************************************************************************************/
-void MainWindow::restoreThemeMode()
-{
-    QSettings settings;
-    const int value = settings.value(kSettingsThemeMode, static_cast<int>(ThemeMode::System)).toInt();
-
-    const ThemeMode mode = static_cast<ThemeMode>(value);
-
-    switch (mode)
-    {
-        case ThemeMode::Light:
-            applyLightTheme();
-            break;
-        case ThemeMode::Dark:
-            applyDarkTheme();
-            break;
-        case ThemeMode::System:
-        default:
-            applySystemTheme();
-            break;
-    }
-    // ✅ Make the menu reflect what we actually applied.
-    updateThemeMenuChecks(mode);
-}
-
-/*!
- * ****************************************************************************************************************************
- * @brief Update the Theme menu checkmarks to match the specified theme mode.
- * @param mode Theme mode that should appear selected in the menu.
- *****************************************************************************************************************************/
-void MainWindow::updateThemeMenuChecks(ThemeMode mode)
-{
-    if (!m_themeSystemAction || !m_themeLightAction || !m_themeDarkAction) return;
-
-    const QSignalBlocker b1(m_themeSystemAction);
-    const QSignalBlocker b2(m_themeLightAction);
-    const QSignalBlocker b3(m_themeDarkAction);
-
-    m_themeSystemAction->setChecked(mode == ThemeMode::System);
-    m_themeLightAction->setChecked(mode == ThemeMode::Light);
-    m_themeDarkAction->setChecked(mode == ThemeMode::Dark);
 }
 
 /*! ******************************************************************************************************************************

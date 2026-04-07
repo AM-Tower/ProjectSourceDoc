@@ -46,6 +46,7 @@
 #include <LineNumberPlainTextEdit.h>
 #include <QGuiApplication>
 #include <QScreen>
+#include <QLineEdit>
 
 #include "AboutDialog.h"
 #include "AppLogUtils.h"
@@ -54,13 +55,16 @@
 #include "StatusBarQueue.h"
 #include "ProjectPaths.h"
 
-/* ------------------------------------------------------------------------------------------------
- * Persistent settings keys
- * ------------------------------------------------------------------------------------------------ */
-static constexpr const char *kSettingsLastFolder = "ui/lastProjectFolder";
-static constexpr const char *kSettingsRecentList = "ui/recentProjectFolders";
-static constexpr const char *kSettingsProjectFolders = "ui/projectFolders";
-static constexpr int kMaxRecentProjects = 10;
+namespace
+{
+    /* ------------------------------------------------------------------------------------------------
+     * Persistent settings keys
+     * ------------------------------------------------------------------------------------------------ */
+    static constexpr const char *kSettingsLastFolder = "ui/lastProjectFolder";
+    static constexpr const char *kSettingsRecentList = "ui/recentProjectFolders";
+    static constexpr const char *kSettingsProjectFolders = "ui/projectFolders";
+    static constexpr int kMaxRecentProjects = 10;
+}
 
 /*!
  * ****************************************************************************************************************************
@@ -158,19 +162,6 @@ void MainWindow::closeEvent(QCloseEvent *event)
 
 /*!
  * ********************************************************************************************************************************
- * @brief        Returns a theme‑aware icon from application resources.
- *********************************************************************************************************************************/
-QIcon MainWindow::themedIcon(const QString &baseName) const
-{
-    const bool dark = qApp->palette().color(QPalette::Window).lightness() < 128;
-
-    const QString theme = dark ? QStringLiteral("dark") : QStringLiteral("light");
-
-    return QIcon(QStringLiteral(":/icons/%1/%2.svg").arg(theme, baseName));
-}
-
-/*!
- * ********************************************************************************************************************************
  * @brief        Loads MRU list and last project folder from QSettings.
  *********************************************************************************************************************************/
 void MainWindow::loadRecentProjects()
@@ -234,9 +225,9 @@ void MainWindow::addRecentProject(const QString &folderPath)
 }
 
 /*!
- * ********************************************************************************************************************************
- * @brief        Rebuilds the File → Open Recent menu.
- *********************************************************************************************************************************/
+ * ****************************************************************************************************************************
+ * @brief Rebuilds the File → Open Recent menu.
+ *****************************************************************************************************************************/
 void MainWindow::rebuildRecentProjectsMenu()
 {
     if (!m_recentMenu) return;
@@ -252,7 +243,9 @@ void MainWindow::rebuildRecentProjectsMenu()
 
     for (const QString &path : std::as_const(m_recentProjects))
     {
-        QAction *a = m_recentMenu->addAction(themedIcon("doc"), path);
+        QAction *a = m_recentMenu->addAction(path);
+        a->setProperty("iconName", QStringLiteral("doc"));
+        a->setIcon(themedIcon(QStringLiteral("doc")));
         a->setData(path);
         connect(a, &QAction::triggered, this, &MainWindow::onOpenRecentTriggered);
     }
@@ -269,32 +262,39 @@ void MainWindow::rebuildRecentProjectsMenu()
 }
 
 /*!
- * ********************************************************************************************************************************
- * @brief        Creates application actions.
- *********************************************************************************************************************************/
+ * ****************************************************************************************************************************
+ * @brief Creates application actions.
+ *****************************************************************************************************************************/
 void MainWindow::createActions()
 {
-    m_openAction = new QAction(themedIcon("doc"), tr("&Open…"), this);
+    m_openAction = new QAction(themedIcon(QStringLiteral("doc")), tr("&Open…"), this);
+    m_openAction->setProperty("iconName", QStringLiteral("doc"));
     connect(m_openAction, &QAction::triggered, this, &MainWindow::onOpenTriggered);
 
-    m_projectSourceAction = new QAction(themedIcon("update"), tr("Create Project‑Source.txt"), this);
+    m_projectSourceAction = new QAction(themedIcon(QStringLiteral("update")), tr("Create Project‑Source.txt"), this);
+    m_projectSourceAction->setProperty("iconName", QStringLiteral("update"));
     connect(m_projectSourceAction, &QAction::triggered, this, &MainWindow::onProjectSourceTriggered);
 
-    m_exitAction = new QAction(themedIcon("exit"), tr("E&xit"), this);
+    m_exitAction = new QAction(themedIcon(QStringLiteral("exit")), tr("E&xit"), this);
+    m_exitAction->setProperty("iconName", QStringLiteral("exit"));
     connect(m_exitAction, &QAction::triggered, this, &QWidget::close);
 
-    m_usageAction = new QAction(themedIcon("help"), tr("Usage"), this);
+    m_usageAction = new QAction(themedIcon(QStringLiteral("help")), tr("Usage"), this);
+    m_usageAction->setProperty("iconName", QStringLiteral("help"));
     connect(m_usageAction, &QAction::triggered, this, [this]() { psd::docs::showUsageDialog(this); });
 
-    m_aboutAction = new QAction(themedIcon("help"), tr("About"), this);
-    connect(m_aboutAction, &QAction::triggered, this, [this]() { AboutDialog dlg(this); dlg.exec(); });}
+    m_aboutAction = new QAction(themedIcon(QStringLiteral("help")), tr("About"), this);
+    m_aboutAction->setProperty("iconName", QStringLiteral("help"));
+    connect(m_aboutAction, &QAction::triggered, this, [this]() { AboutDialog dlg(this); dlg.exec(); });
+}
 
 /*!
- * ********************************************************************************************************************************
- * @brief        Creates the menu bar.
- *********************************************************************************************************************************/
+ * ****************************************************************************************************************************
+ * @brief Creates the menu bar.
+ *****************************************************************************************************************************/
 void MainWindow::createMenus()
 {
+    // File
     QMenu *fileMenu = menuBar()->addMenu(tr("&File"));
     fileMenu->addAction(m_openAction);
 
@@ -304,83 +304,54 @@ void MainWindow::createMenus()
     fileMenu->addSeparator();
     fileMenu->addAction(m_exitAction);
 
+    // Tools
     QMenu *toolsMenu = menuBar()->addMenu(tr("&Tools"));
     toolsMenu->addAction(m_projectSourceAction);
 
-    /* ===================== Theme submenu ===================== */
-    QMenu *themeMenu = toolsMenu->addMenu(tr("Theme"));
+    // ✅ Theme injected here — NOT created here
+    createThemeMenu(toolsMenu);
 
-    m_themeGroup = new QActionGroup(this);
-    m_themeGroup->setExclusive(true);
-
-    m_themeSystemAction = themeMenu->addAction(tr("System"));
-    m_themeLightAction  = themeMenu->addAction(tr("Light"));
-    m_themeDarkAction   = themeMenu->addAction(tr("Dark"));
-
-    m_themeSystemAction->setCheckable(true);
-    m_themeLightAction->setCheckable(true);
-    m_themeDarkAction->setCheckable(true);
-
-    m_themeGroup->addAction(m_themeSystemAction);
-    m_themeGroup->addAction(m_themeLightAction);
-    m_themeGroup->addAction(m_themeDarkAction);
-
-    /* -------------------- Wiring -------------------- */
-    connect(m_themeSystemAction, &QAction::triggered, this, [this]() { applySystemTheme(); saveThemeMode(ThemeMode::System); });
-    connect(m_themeLightAction, &QAction::triggered, this, [this]()  { applyLightTheme(); saveThemeMode(ThemeMode::Light); });
-    connect(m_themeDarkAction, &QAction::triggered, this, [this]()   { applyDarkTheme(); saveThemeMode(ThemeMode::Dark); });
-
+    // Help
     QMenu *helpMenu = menuBar()->addMenu(tr("&Help"));
     helpMenu->addAction(m_usageAction);
     helpMenu->addAction(m_aboutAction);
 }
 
 /*!
- * ********************************************************************************************************************************
- * @brief        Creates the main toolbar.
- *********************************************************************************************************************************/
+ * ****************************************************************************************************************************
+ * @brief Creates the main toolbar.
+ *****************************************************************************************************************************/
 void MainWindow::createToolbar()
 {
     m_toolbar = addToolBar(tr("Main Toolbar"));
     m_toolbar->setMovable(false);
 
-    // Open
     m_toolbar->addAction(m_openAction);
 
-    // Recent (dropdown) — uses the same menu as File → Open Recent
     auto *recentBtn = new QToolButton(m_toolbar);
     recentBtn->setText(tr("Recent"));
+    recentBtn->setProperty("iconName", QStringLiteral("doc"));
     recentBtn->setIcon(themedIcon(QStringLiteral("doc")));
     recentBtn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     recentBtn->setPopupMode(QToolButton::InstantPopup);
-
-    // Wire directly to the existing File menu's recent menu
-    // (rebuildRecentProjectsMenu() updates m_recentMenu's contents in place)
     recentBtn->setMenu(m_recentMenu);
-
     m_toolbar->addWidget(recentBtn);
 
     m_toolbar->addSeparator();
-
-    // Create Project‑Source
     m_toolbar->addAction(m_projectSourceAction);
-
     m_toolbar->addSeparator();
-
-    // Exit
     m_toolbar->addAction(m_exitAction);
 }
 
 /*!
- * ********************************************************************************************************************************
- * @brief        Creates the central tab widget (Log + Settings).
- *********************************************************************************************************************************/
+ * ****************************************************************************************************************************
+ * @brief Creates the central tab widget (Log + Settings).
+ *****************************************************************************************************************************/
 void MainWindow::createTabs()
 {
     m_tabs = new QTabWidget(this);
     setCentralWidget(m_tabs);
 
-    /* ------------------------------ Log tab ------------------------------ */
     QWidget *logTab = new QWidget(this);
     QVBoxLayout *layout = new QVBoxLayout(logTab);
 
@@ -392,23 +363,21 @@ void MainWindow::createTabs()
     m_logView->setReadOnly(true);
     m_logView->setWordWrapMode(QTextOption::NoWrap);
     m_logView->setUndoRedoEnabled(false);
-
     layout->addWidget(m_logView, 1);
-    m_tabs->addTab(logTab, themedIcon("log"), tr("Log"));
 
-    /* ---------------------------- Settings tab ---------------------------- */
+    m_tabs->addTab(logTab, themedIcon(QStringLiteral("log")), tr("Log"));
+
     createSettingsTab();
 
-    /* -------------------- Cursor position → status bar -------------------- */
+    m_tabs->setProperty("tabIconNames", QStringList{QStringLiteral("log"), QStringLiteral("settings")});
+
     connect(m_logView, &QPlainTextEdit::cursorPositionChanged, this,
             [this]()
             {
                 if (!m_cursorPosLabel) return;
-
                 QTextCursor cursor = m_logView->textCursor();
                 const int line = cursor.blockNumber() + 1;
                 const int column = cursor.positionInBlock() + 1;
-
                 m_cursorPosLabel->setText(tr("Ln %1, Col %2").arg(line).arg(column));
             });
 }
@@ -1118,54 +1087,6 @@ void MainWindow::onProjectSourceTriggered()
     }
 
     showFileInLogTab(outPath, tr("Project-Source.txt (%1)").arg(outPath));
-}
-
-/*!
- * ********************************************************************************************************************************
- * @brief Restore the persisted theme mode from settings.
- *
- * Defaults to system theme if no value is stored.
- * *******************************************************************************************************************************/
-void MainWindow::restoreThemeMode()
-{
-    QSettings settings;
-    const int value = settings.value(kSettingsThemeMode, static_cast<int>(ThemeMode::System)).toInt();
-
-    const ThemeMode mode = static_cast<ThemeMode>(value);
-
-    switch (mode)
-    {
-        case ThemeMode::Light:
-            applyLightTheme();
-            break;
-        case ThemeMode::Dark:
-            applyDarkTheme();
-            break;
-        case ThemeMode::System:
-        default:
-            applySystemTheme();
-            break;
-    }
-    // ✅ Make the menu reflect what we actually applied.
-    updateThemeMenuChecks(mode);
-}
-
-/*!
- * ****************************************************************************************************************************
- * @brief Update the Theme menu checkmarks to match the specified theme mode.
- * @param mode Theme mode that should appear selected in the menu.
- *****************************************************************************************************************************/
-void MainWindow::updateThemeMenuChecks(ThemeMode mode)
-{
-    if (!m_themeSystemAction || !m_themeLightAction || !m_themeDarkAction) return;
-
-    const QSignalBlocker b1(m_themeSystemAction);
-    const QSignalBlocker b2(m_themeLightAction);
-    const QSignalBlocker b3(m_themeDarkAction);
-
-    m_themeSystemAction->setChecked(mode == ThemeMode::System);
-    m_themeLightAction->setChecked(mode == ThemeMode::Light);
-    m_themeDarkAction->setChecked(mode == ThemeMode::Dark);
 }
 
 /*! ******************************************************************************************************************************
